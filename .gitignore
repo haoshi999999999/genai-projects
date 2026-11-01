@@ -1,0 +1,33 @@
+# Python virtual environments
+venv/
+.venv/
+**/venv/
+**/.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Local user data
+memory.json
+**/memory.json
+
+# FAISS local storage
+semantic_store/
+vector_store/
+faiss_index/
+
+# IDE settings
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Test cache
+.pytest_cache/

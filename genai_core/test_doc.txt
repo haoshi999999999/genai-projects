@@ -1,0 +1,4 @@
+Our pricing model includes three tiers:
+Basic: $10
+Pro: $20
+Enterprise: Custom pricing based on usage.
