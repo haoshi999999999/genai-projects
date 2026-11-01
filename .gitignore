@@ -31,3 +31,12 @@ faiss_index/
 
 # Test cache
 .pytest_cache/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Database backups
+*.bak
+*.dump
