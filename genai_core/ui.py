@@ -125,7 +125,16 @@ if new_persona != current_persona:
 # -----------------------------
 # MESSAGE INPUT
 # -----------------------------
-message = st.text_input("Your message")
+#message = st.text_input("Your message")
+
+# Clear the input on the next rerun after successful submission
+if st.session_state.pop("clear_message_input", False):
+    st.session_state["message_input"] = ""
+
+message = st.text_input(
+    "Your message",
+    key="message_input"
+)
 
 # -----------------------------
 # STREAMING SEND
@@ -134,15 +143,29 @@ if st.button("Send (Streaming)"):
     if message.strip():
         placeholder = st.empty()
         full_text = ""
+
         try:
-            response = requests.post(f"{API_URL}/stream", json={"session_id": session_id, "content": message}, stream=True, timeout=120)
+            response = requests.post(
+                f"{API_URL}/stream",
+                json={"session_id": session_id, "content": message},
+                stream=True,
+                timeout=120
+            )
+
+            response.raise_for_status()
+
             for chunk in response.iter_content(chunk_size=None):
-                token = chunk.decode("utf-8")
-                full_text += token
-                placeholder.markdown(full_text)
+                if chunk:
+                    token = chunk.decode("utf-8")
+                    full_text += token
+                    placeholder.markdown(full_text)
+
+            # Clear input only after successful streaming
+            st.session_state["clear_message_input"] = True
+            st.rerun()
+
         except requests.exceptions.RequestException as exc:
             st.error(f"Streaming failed: {exc}")
-        st.rerun()
 
 # -----------------------------
 # NON-STREAMING SEND
@@ -155,20 +178,28 @@ if st.button("Send"):
                 json={"session_id": str(session_id), "content": message},
                 timeout=120
             )
+
         except requests.exceptions.RequestException as exc:
             st.error(f"Could not connect to the backend: {exc}")
+
         else:
             if not response.ok:
-                st.error(f"Backend error ({response.status_code}): {response.text}")
+                st.error(
+                    f"Backend error ({response.status_code}): {response.text}"
+                )
             else:
                 try:
                     data = response.json()
+
                 except ValueError as exc:
                     st.error(f"Invalid response from backend: {exc}")
+
                 else:
                     if "reply" not in data:
                         st.error(f"Unexpected backend response: {data}")
                     else:
+                        # Clear input after successful backend response
+                        st.session_state["clear_message_input"] = True
                         st.rerun()
 
 # -----------------------------

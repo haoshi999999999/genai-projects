@@ -146,9 +146,7 @@ async def initialize_agent_session(session: Session, db: AsyncSession):
         agent.sessions[user_id][session_id]["persona"] = session.persona
         return user_id, session_id
 
-    result = await db.execute(
-        select(Message).where(Message.session_id == session.id).order_by(Message.id)
-    )
+    result = await db.execute(select(Message).where(Message.session_id == session.id).order_by(Message.created_at.asc(), Message.id.asc()))
     stored_messages = result.scalars().all()
 
     agent.sessions[user_id][session_id] = {
@@ -326,7 +324,7 @@ async def send_message(req: MessageRequest, db: AsyncSession = Depends(get_db)):
 @app.get("/messages/{session_id}")
 async def get_messages(session_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     await find_session(session_id, db)
-    result = await db.execute(select(Message).where(Message.session_id == session_id).order_by(Message.id))
+    result = await db.execute(select(Message).where(Message.session_id == session_id).order_by(Message.created_at.asc(), Message.id.asc()))
     messages = result.scalars().all()
     return [{"role": m.role, "content": m.content} for m in messages]
 
