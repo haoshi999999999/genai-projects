@@ -8,11 +8,6 @@ load_dotenv()
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
-# IMPORTANT:
-# Change username/password/host/dbname to match your PostgreSQL setup.
-# DATABASE_URL = "postgresql+asyncpg://postgres:0921@localhost:5432/genai_agent"
-
-
 
 # Create async engine
 engine = create_async_engine(
