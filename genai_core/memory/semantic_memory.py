@@ -56,13 +56,16 @@ class SemanticMemory:
                 "Back up the directory before rebuilding."
             ) from exc
 
-    def add(self, text: str):
-        """Add text to semantic memory."""
+    def add(self, user_id: str, text: str):
+        """Add user-specific text to semantic memory."""
 
         if not text or not text.strip():
             return
 
-        doc = Document(page_content=text)
+        doc = Document(
+            page_content=text,
+            metadata={"user_id": user_id}
+        )
 
         if self.store is None:
             self.store = FAISS.from_documents(
@@ -74,13 +77,17 @@ class SemanticMemory:
 
         self.save()
 
-    def search(self, query: str, k: int = 3):
-        """Retrieve semantically similar memory chunks."""
+    def search(self, user_id: str, query: str, k: int = 3):
+        """Retrieve only the current user's semantic memories."""
 
         if self.store is None:
             return []
 
-        results = self.store.similarity_search(query, k=k)
+        results = self.store.similarity_search(
+            query,
+            k=k,
+            filter={"user_id": user_id}
+        )
 
         return [doc.page_content for doc in results]
 

@@ -4,10 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-
 
 # Create async engine
 engine = create_async_engine(
