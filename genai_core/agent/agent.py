@@ -3,18 +3,17 @@ import logging
 import traceback
 import inspect
 import asyncio
+import json
 
-from tools.math_tools import add_numbers
+from tools.math_tools import add_numbers, multiply_numbers
 from tools.search_tools import search_web
-from tools.utility_tools import get_time
+from tools.utility_tools import get_time, echo
 
 from memory.multi_user_memory import MultiUserMemory
-from agent.tool_chain import run_tool_chain
 from memory.semantic_memory import SemanticMemory
 from memory.document_ingestion import DocumentIngestion
 
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from agent.router import decide
 
 
 logger = logging.getLogger(__name__)
@@ -23,9 +22,142 @@ logging.basicConfig(level=logging.INFO)
 
 TOOLS = {
     "add_numbers": add_numbers,
+    "multiply_numbers": multiply_numbers,
     "search_web": search_web,
-    "get_time": get_time
+    "get_time": get_time,
+    "echo": echo
 }
+
+
+TOOL_SCHEMAS = [
+
+    {
+        "type": "function",
+        "function": {
+            "name": "add_numbers",
+            "description": "Add two numbers together.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "a": {
+                        "type": "integer",
+                        "description": "First number"
+                    },
+                    "b": {
+                        "type": "integer",
+                        "description": "Second number"
+                    }
+                },
+                "required": ["a", "b"],
+                "additionalProperties": False
+            }
+        }
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "multiply_numbers",
+            "description": "Multiply two numbers together.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "a": {
+                        "type": "integer"
+                    },
+                    "b": {
+                        "type": "integer"
+                    }
+                },
+                "required": ["a", "b"],
+                "additionalProperties": False
+            }
+        }
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web",
+            "description": (
+                "Search the web for information. "
+                "Use this when the user explicitly requests a search."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string"
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False
+            }
+        }
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "get_time",
+            "description": "Get the current system date and time.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False
+            }
+        }
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "echo",
+            "description": "Return the supplied text unchanged.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string"
+                    }
+                },
+                "required": ["text"],
+                "additionalProperties": False
+            }
+        }
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "retrieve_documents",
+            "description": (
+                "Search uploaded PDF and TXT documents for relevant "
+                "information. Use this when questions concern company "
+                "policies, uploaded documents, handbooks, or information "
+                "that may be contained in stored documents."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Information to search for."
+                    },
+                    "k": {
+                        "type": "integer",
+                        "description": "Number of document chunks.",
+                        "default": 3
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False
+            }
+        }
+    }
+
+]
 
 
 class Agent:
@@ -112,6 +244,54 @@ class Agent:
 
         return result
 
+    def retrieve_documents(self, user_id, query: str, k: int = 3):
+
+        try:
+            results = self.docs.search(
+                query=query,
+                user_id=user_id,
+                k=k
+            )
+
+            if not results:
+                return "No relevant documents were found."
+
+            retrieved_content = []
+
+            for i, doc in enumerate(results, start=1):
+
+                source = doc.metadata.get(
+                    "source", "Unknown source"
+                )
+
+                page = doc.metadata.get("page")
+
+                page_number = (
+                    page + 1 if page is not None else "Unknown"
+                )
+
+                document_type = (
+                    "Shared"
+                    if doc.metadata.get("is_shared")
+                    else "Private"
+                )
+
+                retrieved_content.append(
+                    f"[Source {i}]\n"
+                    f"Document Type: {document_type}\n"
+                    f"Filename: {source}\n"
+                    f"Page: {page_number}\n"
+                    f"Content:\n{doc.page_content}"
+                )
+
+            return "\n\n".join(retrieved_content)
+
+        except Exception:
+
+            logger.exception("Document retrieval failed")
+
+            return "Document retrieval failed."
+
     # -----------------------------
     # SESSION MANAGEMENT
     # -----------------------------
@@ -169,14 +349,19 @@ class Agent:
     def extract_fact(self, user_id, message):
 
         lower = message.lower()
+        marker = "remember that"
 
-        if "remember that" in lower:
+        if marker in lower:
 
-            fact = message.split("remember that", 1)[1].strip()
+            index = lower.find(marker)
+            fact = message[index + len(marker):].strip()
+
+            if not fact:
+                return "What would you like me to remember?"
 
             try:
                 self.memory.add_long_term(user_id, fact)
-                self.semantic.add(fact)
+                self.semantic.add(user_id, fact)
 
             except Exception:
                 logger.debug(
@@ -387,10 +572,173 @@ class Agent:
                 traceback.format_exc()
             )
 
+    async def _execute_tool_calls(self, user_id, session_id, user_message):
+    
+        tool_registry = {
+            **TOOLS,
+            "retrieve_documents": self.retrieve_documents
+        }
+
+        messages = self.sessions[user_id][session_id]["messages"]
+
+        persona = self.sessions[user_id][session_id].get(
+            "persona", "default"
+        )
+
+        persona_prompt = self.personas.get(
+            persona, self.personas["default"]
+        )
+
+        context = self.memory.get_context(user_id)
+        facts = self.memory.get_facts(user_id)
+
+        system_prompt = f"""
+    {persona_prompt}
+
+    You are an intelligent AI agent with access to external tools.
+
+    You can use tools when necessary to answer user questions.
+
+    Instructions:
+
+    1. Decide whether a tool is needed.
+    2. Select the most appropriate tool.
+    3. Do not invoke tools unnecessarily.
+    4. Use document retrieval when the answer depends on uploaded documents.
+    5. Use tool results as evidence when generating answers.
+    6. Never invent information from retrieved documents.
+    7. If document retrieval does not find relevant information,
+    tell the user honestly.
+    8. Answer directly when no tool is necessary.
+
+    Conversation history:
+    {context}
+
+    Known facts:
+    {facts}
+    """
+
+        llm_messages = [
+            {
+                "role": "system",
+                "content": system_prompt
+            },
+            *messages
+        ]
+
+        max_iterations = 5
+
+        for iteration in range(max_iterations):
+
+            response = await self.llm.chat.completions.create(
+                model=self.llm.model_name,
+                messages=llm_messages,
+                tools=TOOL_SCHEMAS,
+                tool_choice="auto",
+                parallel_tool_calls=False
+            )
+
+            assistant_message = response.choices[0].message
+
+            tool_calls = assistant_message.tool_calls
+
+            # No tool required: return the normal LLM response.
+            if not tool_calls:
+
+                return assistant_message.content or ""
+
+            logger.info(
+                "LLM selected %s tool(s)",
+                len(tool_calls)
+            )
+
+            # Preserve the assistant's tool-call message.
+            llm_messages.append(
+                assistant_message.model_dump(exclude_none=True)
+            )
+
+            # Execute requested tools.
+            for tool_call in tool_calls:
+
+                tool_name = tool_call.function.name
+
+                try:
+
+                    args = json.loads(
+                        tool_call.function.arguments
+                    )
+
+                    if not isinstance(args, dict):
+                        raise ValueError("Tool arguments must be a JSON object.")
+
+                    tool_fn = tool_registry.get(tool_name)
+
+                    if tool_fn is None:
+                        raise ValueError(
+                            f"Unknown tool: {tool_name}"
+                        )
+
+                    logger.info(
+                        "Executing tool: %s | Arguments: %s",
+                        tool_name,
+                        args
+                    )
+
+                    if tool_name == "retrieve_documents":
+                        result = await self._maybe_await(
+                            tool_fn,
+                            user_id=user_id,
+                            **args
+                        )
+                    else:
+                        result = await self._maybe_await(
+                            tool_fn,
+                            **args
+                        )
+
+                    logger.info(
+                        "Tool '%s' executed successfully.",
+                        tool_name
+                    )
+
+                    tool_result = str(result)
+
+                except Exception as exc:
+
+                    logger.exception(
+                        "Tool execution failed: %s",
+                        tool_name
+                    )
+
+                    tool_result = (
+                        f"Tool execution failed: {str(exc)}"
+                    )
+
+                # Return the execution result to the LLM.
+                llm_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": tool_name,
+                    "content": tool_result
+                })
+
+        # Maximum tool iterations reached.
+        logger.warning("Maximum tool iterations reached.")
+
+        # Ask the LLM to synthesize the results without requesting more tools.
+        response = await self.llm.chat.completions.create(
+            model=self.llm.model_name,
+            messages=llm_messages,
+            tools=TOOL_SCHEMAS,
+            tool_choice="none"
+        )
+
+        return response.choices[0].message.content or ""
+
+
     # -----------------------------
     # NON-STREAMING
     # -----------------------------
-
     async def run(self, user_id, session_id, user_message):
 
         self._ensure_session(user_id, session_id)
@@ -407,235 +755,56 @@ class Agent:
                     self.generate_title(user_message)
                 )
 
-            messages = self.sessions[user_id][session_id]["messages"]
-
             self.memory.add_short_term(
                 user_id, f"User: {user_message}"
             )
 
-            # -----------------------------
             # DOCUMENT INGESTION
-            # -----------------------------
+            normalized_message = user_message.strip()
 
-            if user_message.lower().startswith("ingest "):
+            if "ingest" in normalized_message.lower():
 
-                file_path = user_message.split("ingest ", 1)[1].strip()
+                logger.info("DOCUMENT INGESTION COMMAND DETECTED")
 
-                try:
+                # Extract everything after the first occurrence of "ingest"
+                index = normalized_message.lower().find("ingest")
 
-                    result = self.docs.load(file_path)
+                file_path = normalized_message[index + len("ingest"):].strip()
 
-                except Exception as e:
+                # Remove optional colon
+                if file_path.startswith(":"):
+                    file_path = file_path[1:].strip()
 
-                    logger.exception("Document ingestion error")
-
-                    return f"Failed to ingest document: {str(e)}"
-
-                self.add_to_session(
-                    user_id, session_id, "assistant", result
-                )
-
-                self.last_response = result
-
-                return result
-
-            # -----------------------------
-            # FACT EXTRACTION
-            # -----------------------------
-
-            fact_reply = self.extract_fact(user_id, user_message)
-
-            if fact_reply:
-
-                self.add_to_session(
-                    user_id, session_id, "assistant", fact_reply
-                )
-
-                self.last_response = fact_reply
-
-                return fact_reply
-
-            # -----------------------------
-            # TOOL ROUTING
-            # -----------------------------
-
-            try:
-
-                decision = decide(user_message)
-
-                if inspect.isawaitable(decision):
-                    decision = await decision
-
-            except Exception as e:
-
-                logger.error("Router decide() failed: %s", e)
-                logger.error(traceback.format_exc())
-
-                decision = {
-                    "tool": None,
-                    "args": {}
-                }
-
-            # =================================================
-            # NO-TOOL PATH: SEMANTIC MEMORY + DOCUMENT RAG
-            # =================================================
-
-            if decision.get("tool") is None:
-
-                context = self.memory.get_context(user_id)
-                facts = self.memory.get_facts(user_id)
-
-                # -----------------------------
-                # RETRIEVE SEMANTIC MEMORY
-                # -----------------------------
-
-                try:
-
-                    semantic_hits = self.semantic.search(user_message)
-                    semantic_context = "\n".join(semantic_hits)
-
-                except Exception:
-
-                    semantic_context = ""
-
-                    logger.exception(
-                        "Semantic memory search failed"
+                if not file_path:
+                    assistant_reply = (
+                        "Please provide a file path. "
+                        "Example: ingest C:\\documents\\handbook.pdf"
                     )
 
-                # -----------------------------
-                # RETRIEVE DOCUMENT CONTENT
-                # -----------------------------
+                else:
+                    logger.info("File path: %s", file_path)
 
-                try:
+                    try:
+                        result = self.docs.load(
+                            file_path=file_path,
+                            user_id=user_id,
+                            is_shared=False
+                        )
 
-                    doc_hits = self.docs.search(
-                        user_message, k=3
-                    )
+                        assistant_reply = str(result)
 
-                    # Temporary RAG debugging
-                    logger.info("RAG retrieved %s chunks", len(doc_hits))
-
-                    for i, hit in enumerate(doc_hits, start=1):
                         logger.info(
-                            "RAG result %s | metadata=%s | content=%s",
-                            i,
-                            hit.metadata,
-                            hit.page_content[:300]
+                            "DOCUMENT INGESTION SUCCESS: %s",
+                            assistant_reply
                         )
 
-                    doc_context_parts = []
+                    except Exception as e:
 
-                    for i, hit in enumerate(doc_hits, start=1):
+                        logger.exception("Document ingestion error")
 
-                        source = hit.metadata.get(
-                            "source", "Unknown source"
+                        assistant_reply = (
+                            f"Failed to ingest document: {str(e)}"
                         )
-
-                        # PyPDFLoader uses zero-based page numbers.
-                        page = hit.metadata.get("page")
-
-                        page_number = (
-                            page + 1
-                            if page is not None
-                            else "Unknown"
-                        )
-
-                        doc_context_parts.append(
-                            f"[Source {i}]\n"
-                            f"Filename: {source}\n"
-                            f"Page: {page_number}\n"
-                            f"Content:\n{hit.page_content}"
-                        )
-
-                    doc_context = "\n\n".join(doc_context_parts)
-
-                except Exception:
-
-                    doc_context = ""
-
-                    logger.exception(
-                        "Document search failed"
-                    )
-
-                # -----------------------------
-                # BUILD SYSTEM PROMPT
-                # -----------------------------
-
-                persona = self.sessions[user_id][session_id].get(
-                    "persona", "default"
-                )
-
-                persona_prompt = self.personas.get(
-                    persona, self.personas["default"]
-                )
-
-                system_prompt = f"""
-{persona_prompt}
-
-You are an AI assistant with access to retrieved document content.
-
-Instructions for document-related questions:
-
-1. Use the relevant document context as the source of truth.
-2. Do not invent facts or policy details that are not supported by the retrieved content.
-3. If the retrieved content does not contain the answer, clearly say that
-   the available documents do not provide that information.
-4. When answering using document content, cite the source using its
-   source number, filename, and page number.
-5. Do not fabricate source references.
-
-Conversation history:
-{context}
-
-Relevant semantic memory:
-{semantic_context}
-
-Relevant document context:
-{doc_context}
-
-Known facts:
-{facts}
-
-Respond naturally and clearly.
-"""
-
-                # -----------------------------
-                # CALL LLM
-                # -----------------------------
-
-                try:
-
-                    response = await self.llm.chat.completions.create(
-                        model=self.llm.model_name,
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": system_prompt
-                            },
-                            *messages
-                        ]
-                    )
-
-                    assistant_reply = (
-                        self._safe_extract_content(response) or ""
-                    )
-
-                except Exception as exc:
-
-                    logger.error(
-                        "LLM call failed (no-tool path): %s",
-                        exc
-                    )
-
-                    logger.error(traceback.format_exc())
-
-                    assistant_reply = (
-                        "Sorry, the assistant is temporarily unavailable."
-                    )
-
-                # -----------------------------
-                # SAVE ASSISTANT RESPONSE
-                # -----------------------------
 
                 self.add_to_session(
                     user_id,
@@ -645,137 +814,47 @@ Respond naturally and clearly.
                 )
 
                 self.memory.add_short_term(
-                    user_id, f"Assistant: {assistant_reply}"
+                    user_id,
+                    f"Assistant: {assistant_reply}"
                 )
 
                 self.last_response = assistant_reply
 
                 return assistant_reply
 
-            # =================================================
-            # TOOL PATH
-            # =================================================
+            # FACT EXTRACTION
+            fact_reply = self.extract_fact(user_id, user_message)
 
-            # -----------------------------
-            # TOOL CHAIN
-            # -----------------------------
+            if fact_reply:
 
-            if isinstance(decision.get("tool"), list):
-
-                try:
-
-                    result = await run_tool_chain(
-                        self.llm,
-                        decision,
-                        self.memory,
-                        user_id
-                    )
-
-                except Exception as exc:
-
-                    logger.error(
-                        "run_tool_chain failed: %s",
-                        exc
-                    )
-
-                    logger.error(traceback.format_exc())
-
-                    result = "Tool chain failed."
-
-                self.last_response = result
-
-                return result
-
-            # -----------------------------
-            # SINGLE TOOL EXECUTION
-            # -----------------------------
-
-            tool_name = decision.get("tool")
-            args = decision.get("args", {})
-
-            tool_fn = TOOLS.get(tool_name)
-
-            if tool_fn is None:
-
-                result = f"Unknown tool: {tool_name}"
-
-            else:
-
-                try:
-
-                    result = await self._maybe_await(
-                        tool_fn, **args
-                    )
-
-                except Exception as exc:
-
-                    logger.error(
-                        "Tool execution failed: %s",
-                        exc
-                    )
-
-                    logger.error(traceback.format_exc())
-
-                    result = "Tool execution failed."
-
-            # -----------------------------
-            # TOOL RESULT SYNTHESIS
-            # -----------------------------
-
-            context = self.memory.get_context(user_id)
-            facts = self.memory.get_facts(user_id)
-
-            synthesis_prompt = f"""
-You are a helpful AI assistant.
-
-Conversation history:
-{context}
-
-Known facts:
-{facts}
-
-The user asked: {user_message}
-
-You executed tool '{tool_name}' with args: {args}
-Tool result: {result}
-
-Now respond naturally to the user using the tool result.
-"""
-
-            try:
-
-                response = await self.llm.chat.completions.create(
-                    model=self.llm.model_name,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": synthesis_prompt
-                        },
-                        *messages
-                    ]
+                self.add_to_session(
+                    user_id, session_id, "assistant", fact_reply
                 )
 
-                assistant_reply = (
-                    self._safe_extract_content(response) or ""
+                self.last_response = fact_reply
+                return fact_reply
+
+            # LLM-BASED TOOL ORCHESTRATION
+            try:
+
+                assistant_reply = await self._execute_tool_calls(
+                    user_id,
+                    session_id,
+                    user_message
                 )
 
             except Exception as exc:
 
-                logger.error(
-                    "LLM call failed (tool synthesis): %s",
+                logger.exception(
+                    "LLM tool orchestration failed: %s",
                     exc
                 )
-
-                logger.error(traceback.format_exc())
 
                 assistant_reply = (
                     "Sorry, the assistant is temporarily unavailable."
                 )
 
-            # -----------------------------
             # SAVE ASSISTANT RESPONSE
-            # -----------------------------
-
             self.add_to_session(
                 user_id,
                 session_id,
@@ -784,45 +863,36 @@ Now respond naturally to the user using the tool result.
             )
 
             self.memory.add_short_term(
-                user_id, f"Assistant: {assistant_reply}"
+                user_id,
+                f"Assistant: {assistant_reply}"
             )
 
             self.last_response = assistant_reply
 
             return assistant_reply
 
-        # -----------------------------
-        # OUTER ERROR HANDLING
-        # -----------------------------
-
         except Exception as exc:
 
-            logger.error(
+            logger.exception(
                 "Agent.run unexpected error: %s",
                 exc
             )
-
-            logger.error(traceback.format_exc())
 
             fallback = (
                 "Sorry, the assistant is temporarily unavailable."
             )
 
             try:
-
                 self.add_to_session(
-                    user_id,
-                    session_id,
-                    "assistant",
-                    fallback
+                    user_id, session_id, "assistant", fallback
                 )
 
                 self.last_response = fallback
 
             except Exception:
-
-                logger.debug(
-                    "Failed to save fallback after unexpected error."
-                )
+                logger.exception("Failed to save fallback response.")
 
             return fallback
+
+
+    
