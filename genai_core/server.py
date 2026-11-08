@@ -3,49 +3,84 @@ import uuid
 import hashlib
 import traceback
 import bcrypt
+import json
+import logging
+
+import asyncio
+import tempfile
+from pathlib import Path
+
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 import jwt
 import secrets
-from datetime import datetime, timedelta, timezone
 
 from pwdlib import PasswordHash
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Depends, HTTPException
+
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException,
+    UploadFile,
+    File
+)
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+
 from pydantic import BaseModel
+
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+
 from groq import AsyncGroq, NotFoundError
 
 from db.database import async_session
 from db.models import User, Session, Message
+
 from agent.agent import Agent
 
-import logging
+
+# --------------------------------------------------
+# LOGGING
+# --------------------------------------------------
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 # --------------------------------------------------
-# Configuration
+# CONFIGURATION
 # --------------------------------------------------
 
 load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
-FALLBACK_GROQ_MODEL = os.getenv("FALLBACK_GROQ_MODEL", None)
+
+GROQ_MODEL = os.getenv(
+    "GROQ_MODEL",
+    "openai/gpt-oss-120b"
+)
+
+FALLBACK_GROQ_MODEL = os.getenv(
+    "FALLBACK_GROQ_MODEL",
+    None
+)
 
 if not GROQ_API_KEY:
-    raise RuntimeError("GROQ_API_KEY is missing. Add it to your .env file or environment.")
+    raise RuntimeError(
+        "GROQ_API_KEY is missing. "
+        "Add it to your .env file or environment."
+    )
 
 
 # --------------------------------------------------
-# Authentication configuration
+# AUTHENTICATION CONFIGURATION
 # --------------------------------------------------
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
@@ -54,30 +89,53 @@ if not SECRET_KEY:
     raise RuntimeError("JWT_SECRET_KEY is missing from .env")
 
 ALGORITHM = "HS256"
-
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 password_hash = PasswordHash.recommended()
-
 security = HTTPBearer(auto_error=False)
 
+
 # --------------------------------------------------
-# Groq client wrapper
+# DOCUMENT UPLOAD CONFIGURATION
+# --------------------------------------------------
+
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+
+ALLOWED_DOCUMENT_EXTENSIONS = {
+    ".pdf",
+    ".txt"
+}
+
+
+# --------------------------------------------------
+# GROQ CLIENT WRAPPER
 # --------------------------------------------------
 
 class GroqLLM:
+
     def __init__(self, api_key: str, model_name: str):
         self.client = AsyncGroq(api_key=api_key)
         self.chat = self.client.chat
         self.model_name = model_name
 
-    async def invoke(self, prompt: str, *, stream: bool = False):
+    async def invoke(
+        self,
+        prompt: str,
+        *,
+        stream: bool = False
+    ):
         messages = [
             {
                 "role": "system",
-                "content": "You are a helpful assistant. Answer clearly and concisely."
+                "content": (
+                    "You are a helpful assistant. "
+                    "Answer clearly and concisely."
+                )
             },
-            {"role": "user", "content": prompt}
+            {
+                "role": "user",
+                "content": prompt
+            }
         ]
 
         try:
@@ -94,7 +152,10 @@ class GroqLLM:
             if not FALLBACK_GROQ_MODEL:
                 raise
 
-            logger.info("Retrying with fallback model: %s", FALLBACK_GROQ_MODEL)
+            logger.info(
+                "Retrying with fallback model: %s",
+                FALLBACK_GROQ_MODEL
+            )
 
             self.model_name = FALLBACK_GROQ_MODEL
 
@@ -108,25 +169,35 @@ class GroqLLM:
         content = response.choices[0].message.content
 
         logger.info("Groq model: %s", self.model_name)
-    
 
         if not content or not content.strip():
             raise RuntimeError("Groq returned an empty response.")
 
         return content.strip()
-    
 
-llm = GroqLLM(api_key=GROQ_API_KEY, model_name=GROQ_MODEL)
+
+# --------------------------------------------------
+# INITIALIZE LLM AND AGENT
+# --------------------------------------------------
+
+llm = GroqLLM(
+    api_key=GROQ_API_KEY,
+    model_name=GROQ_MODEL
+)
+
 agent = Agent(llm=llm)
 
 
 # --------------------------------------------------
-# FastAPI application
+# FASTAPI APPLICATION
 # --------------------------------------------------
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Starting GenAI Agent API.")
     yield
+    logger.info("Shutting down GenAI Agent API.")
+
 
 app = FastAPI(lifespan=lifespan)
 
@@ -138,11 +209,12 @@ app.add_middleware(
     ],
     allow_credentials=False,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
+
 # --------------------------------------------------
-# Database helpers
+# DATABASE HELPERS
 # --------------------------------------------------
 
 async def get_db():
@@ -150,18 +222,30 @@ async def get_db():
         yield db
 
 
+# --------------------------------------------------
+# PASSWORD HELPERS
+# --------------------------------------------------
+
 def hash_password(password: str) -> str:
     return password_hash.hash(password)
 
 
-def verify_password(password: str, hashed_password: str) -> bool:
+def verify_password(
+    password: str,
+    hashed_password: str
+) -> bool:
 
     # Argon2 password hashes
     if hashed_password.startswith("$argon2"):
-        return password_hash.verify(password, hashed_password)
+        return password_hash.verify(
+            password,
+            hashed_password
+        )
 
     # Bcrypt password hashes
-    if hashed_password.startswith(("$2a$", "$2b$", "$2y$")):
+    if hashed_password.startswith(
+        ("$2a$", "$2b$", "$2y$")
+    ):
         return bcrypt.checkpw(
             password.encode("utf-8"),
             hashed_password.encode("utf-8")
@@ -181,9 +265,14 @@ def verify_password(password: str, hashed_password: str) -> bool:
     return False
 
 
-def create_access_token(email: str):
+# --------------------------------------------------
+# JWT HELPERS
+# --------------------------------------------------
 
-    expire = datetime.now(timezone.utc) + timedelta(
+def create_access_token(email: str):
+    expire = datetime.now(
+        timezone.utc
+    ) + timedelta(
         minutes=ACCESS_TOKEN_EXPIRE_MINUTES
     )
 
@@ -192,19 +281,22 @@ def create_access_token(email: str):
         "exp": expire
     }
 
-    token = jwt.encode(
+    return jwt.encode(
         payload,
         SECRET_KEY,
         algorithm=ALGORITHM
     )
 
-    return token
 
+# --------------------------------------------------
+# AUTHENTICATION DEPENDENCY
+# --------------------------------------------------
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ):
+
     if credentials is None:
         raise HTTPException(
             status_code=401,
@@ -214,7 +306,6 @@ async def get_current_user(
     token = credentials.credentials
 
     try:
-
         payload = jwt.decode(
             token,
             SECRET_KEY,
@@ -230,7 +321,6 @@ async def get_current_user(
             )
 
     except jwt.InvalidTokenError:
-
         raise HTTPException(
             status_code=401,
             detail="Invalid or expired token"
@@ -250,6 +340,10 @@ async def get_current_user(
 
     return user
 
+
+# --------------------------------------------------
+# SESSION OWNERSHIP VALIDATION
+# --------------------------------------------------
 
 async def find_owned_session(
     session_id: uuid.UUID,
@@ -275,7 +369,15 @@ async def find_owned_session(
     return session
 
 
-async def initialize_agent_session(session: Session, db: AsyncSession):
+# --------------------------------------------------
+# INITIALIZE AGENT SESSION
+# --------------------------------------------------
+
+async def initialize_agent_session(
+    session: Session,
+    db: AsyncSession
+):
+
     user_id = session.user_email
     session_id = str(session.id)
 
@@ -283,28 +385,45 @@ async def initialize_agent_session(session: Session, db: AsyncSession):
         agent.sessions[user_id] = {}
 
     if session_id in agent.sessions[user_id]:
-        agent.sessions[user_id][session_id]["persona"] = session.persona
+        agent.sessions[user_id][session_id]["persona"] = (
+            session.persona
+        )
         return user_id, session_id
 
-    result = await db.execute(select(Message).where(Message.session_id == session.id).order_by(Message.created_at.asc(), Message.id.asc()))
+    result = await db.execute(
+        select(Message)
+        .where(Message.session_id == session.id)
+        .order_by(
+            Message.created_at.asc(),
+            Message.id.asc()
+        )
+    )
+
     stored_messages = result.scalars().all()
 
     agent.sessions[user_id][session_id] = {
         "title": session.title,
         "persona": session.persona,
-        "messages": [{"role": m.role, "content": m.content} for m in stored_messages],
+        "messages": [
+            {
+                "role": message.role,
+                "content": message.content
+            }
+            for message in stored_messages
+        ]
     }
 
     return user_id, session_id
 
 
 # --------------------------------------------------
-# Request models
+# REQUEST MODELS
 # --------------------------------------------------
 
 class RegisterRequest(BaseModel):
     email: str
     password: str
+
 
 class TestLLMRequest(BaseModel):
     prompt: str
@@ -329,12 +448,15 @@ class PersonaUpdate(BaseModel):
     session_id: uuid.UUID
     persona: str
 
+
 class SessionRequest(BaseModel):
     session_id: uuid.UUID
 
+
 # --------------------------------------------------
-# Authentication endpoints
+# AUTHENTICATION ENDPOINTS
 # --------------------------------------------------
+
 @app.post("/register")
 async def register(
     req: RegisterRequest,
@@ -359,7 +481,6 @@ async def register(
     )
 
     db.add(user)
-
     await db.commit()
 
     return {"status": "registered"}
@@ -381,17 +502,14 @@ async def login(
         req.password,
         user.password_hash
     ):
-
         raise HTTPException(
             status_code=401,
             detail="Invalid credentials"
         )
 
-    # Upgrade legacy SHA-256 hashes to Argon2
+    # Upgrade legacy hashes to Argon2.
     if not user.password_hash.startswith("$argon2"):
-
         user.password_hash = hash_password(req.password)
-
         await db.commit()
 
     access_token = create_access_token(user.email)
@@ -404,29 +522,58 @@ async def login(
 
 
 # --------------------------------------------------
-# Session endpoints
+# SESSION ENDPOINTS
 # --------------------------------------------------
+
 @app.get("/session/list")
 async def list_sessions(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    """
+    Return only the authenticated user's sessions.
+
+    Sessions are ordered by their most recent message activity,
+    newest first. Sessions without messages appear after sessions
+    that contain messages. The response includes last_activity so
+    the UI can distinguish sessions with similar titles.
+    """
 
     result = await db.execute(
-        select(Session).where(
+        select(
+            Session,
+            func.max(Message.created_at).label("last_activity")
+        )
+        .outerjoin(
+            Message,
+            Message.session_id == Session.id
+        )
+        .where(
             Session.user_email == current_user.email
+        )
+        .group_by(Session.id)
+        .order_by(
+            func.max(Message.created_at).desc().nullslast(),
+            Session.id.desc()
         )
     )
 
-    sessions = result.scalars().all()
+    session_rows = result.all()
 
-    return {
-        str(s.id): {
-            "title": s.title,
-            "persona": s.persona
+    response = {}
+
+    for session, last_activity in session_rows:
+        response[str(session.id)] = {
+            "title": session.title,
+            "persona": session.persona,
+            "last_activity": (
+                last_activity.isoformat()
+                if last_activity is not None
+                else None
+            )
         }
-        for s in sessions
-    }
+
+    return response
 
 
 @app.post("/session/create")
@@ -450,12 +597,12 @@ async def create_session(
     )
 
     db.add(new_session)
-
     await db.commit()
-
     await db.refresh(new_session)
 
-    return {"session_id": new_session.id}
+    return {
+        "session_id": new_session.id
+    }
 
 
 @app.get("/session/{session_id}")
@@ -464,6 +611,7 @@ async def get_session(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+
     session = await find_owned_session(
         session_id,
         current_user,
@@ -483,6 +631,7 @@ async def update_persona(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+
     session = await find_owned_session(
         req.session_id,
         current_user,
@@ -496,14 +645,18 @@ async def update_persona(
         )
 
     session.persona = req.persona
-
     await db.commit()
 
     user_id = session.user_email
     session_id = str(session.id)
 
-    if user_id in agent.sessions and session_id in agent.sessions[user_id]:
-        agent.sessions[user_id][session_id]["persona"] = req.persona
+    if (
+        user_id in agent.sessions
+        and session_id in agent.sessions[user_id]
+    ):
+        agent.sessions[user_id][session_id]["persona"] = (
+            req.persona
+        )
 
     return {"status": "updated"}
 
@@ -514,27 +667,22 @@ async def clear_session(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    # 1. Verify that the session belongs to the authenticated user
+
     session = await find_owned_session(
         req.session_id,
         current_user,
         db
     )
 
-    # 2. Delete all messages associated with this session
     await db.execute(
         Message.__table__.delete().where(
             Message.session_id == session.id
         )
     )
 
-    # 3. Reset the session title
     session.title = "New Chat"
-
-    # 4. Persist changes to PostgreSQL
     await db.commit()
 
-    # 5. Reset the corresponding in-memory Agent conversation
     user_id = session.user_email
     agent_session_id = str(session.id)
 
@@ -551,9 +699,11 @@ async def clear_session(
         "title": "New Chat"
     }
 
+
 # --------------------------------------------------
-# Chat endpoints
+# CHAT ENDPOINTS
 # --------------------------------------------------
+
 @app.post("/message/send")
 async def send_message(
     req: MessageRequest,
@@ -572,6 +722,7 @@ async def send_message(
         db
     )
 
+    # Persist user message once.
     user_msg = Message(
         id=uuid.uuid4(),
         session_id=session.id,
@@ -580,11 +731,9 @@ async def send_message(
     )
 
     db.add(user_msg)
-
     await db.commit()
 
     try:
-
         reply = await agent.run(
             user_id,
             agent_session_id,
@@ -595,11 +744,10 @@ async def send_message(
             raise RuntimeError("Agent returned an empty response.")
 
     except Exception as exc:
-
         logger.exception("Agent.run failed: %s", exc)
-
         reply = "Sorry, the assistant is temporarily unavailable."
 
+    # Persist assistant response once.
     assistant_msg = Message(
         id=uuid.uuid4(),
         session_id=session.id,
@@ -608,10 +756,11 @@ async def send_message(
     )
 
     db.add(assistant_msg)
-
     await db.commit()
 
-    session.title = agent.sessions[user_id][agent_session_id]["title"]
+    session.title = (
+        agent.sessions[user_id][agent_session_id]["title"]
+    )
 
     await db.commit()
 
@@ -624,6 +773,7 @@ async def get_messages(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+
     await find_owned_session(
         session_id,
         current_user,
@@ -633,25 +783,155 @@ async def get_messages(
     result = await db.execute(
         select(Message)
         .where(Message.session_id == session_id)
-        .order_by(Message.created_at.asc(), Message.id.asc())
+        .order_by(
+            Message.created_at.asc(),
+            Message.id.asc()
+        )
     )
 
     messages = result.scalars().all()
 
     return [
         {
-            "role": m.role,
-            "content": m.content
+            "role": message.role,
+            "content": message.content
         }
-        for m in messages
+        for message in messages
     ]
 
-# Temporary endpoint to test Groq independently of Agent
+
+# ==================================================
+# DOCUMENT UPLOAD ENDPOINT
+# ==================================================
+
+@app.post("/documents/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+
+    if not file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="A filename is required."
+        )
+
+    # Extract only the filename, not any supplied directory.
+    safe_filename = Path(file.filename).name
+    file_extension = Path(safe_filename).suffix.lower()
+
+    if file_extension not in ALLOWED_DOCUMENT_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF and TXT files are supported."
+        )
+
+    temp_path = None
+
+    try:
+        total_size = 0
+
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            suffix=file_extension,
+            delete=False
+        ) as temp_file:
+
+            temp_path = temp_file.name
+
+            while True:
+                chunk = await file.read(1024 * 1024)
+
+                if not chunk:
+                    break
+
+                total_size += len(chunk)
+
+                if total_size > MAX_UPLOAD_SIZE:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="File exceeds the 10 MB upload limit."
+                    )
+
+                temp_file.write(chunk)
+
+        if total_size == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="The uploaded file is empty."
+            )
+
+        logger.info(
+            "Document upload started | User: %s | File: %s | Size: %s",
+            current_user.email,
+            safe_filename,
+            total_size
+        )
+
+        result = await asyncio.to_thread(
+            agent._ingest_document,
+            current_user.email,
+            temp_path,
+            safe_filename
+        )
+
+        if (
+            not isinstance(result, str)
+            or not result.strip()
+            or result.startswith("Document ingestion failed.")
+        ):
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Document ingestion failed. "
+                    "Please check the document and try again."
+                )
+            )
+
+        logger.info(
+            "Document upload completed | User: %s | File: %s",
+            current_user.email,
+            safe_filename
+        )
+
+        return {
+            "status": "success",
+            "filename": safe_filename,
+            "size": total_size,
+            "message": result
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        logger.exception(
+            "Document upload failed for user %s",
+            current_user.email
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Document upload failed."
+        )
+
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        await file.close()
+
+
+# --------------------------------------------------
+# DIRECT LLM TEST ENDPOINT
+# --------------------------------------------------
+
 @app.post("/test-llm")
 async def test_llm(
     req: TestLLMRequest,
     current_user: User = Depends(get_current_user)
 ):
+
     try:
         response = await llm.invoke(req.prompt)
 
@@ -663,11 +943,36 @@ async def test_llm(
 
     except Exception as exc:
         logger.exception("Direct LLM test failed")
-        raise HTTPException(status_code=500, detail=str(exc))
 
-# --------------------------------------------------
-# Streaming endpoint
-# --------------------------------------------------
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc)
+        )
+
+
+# ==================================================
+# SERVER-SENT EVENTS HELPERS
+# ==================================================
+
+def format_sse_event(event: str, data: dict) -> str:
+    """
+    Format a Server-Sent Event.
+    """
+
+    payload = json.dumps(
+        data,
+        ensure_ascii=False
+    )
+
+    return (
+        f"event: {event}\n"
+        f"data: {payload}\n\n"
+    )
+
+
+# ==================================================
+# STREAMING ENDPOINT
+# ==================================================
 
 @app.post("/stream")
 async def stream_message(
@@ -675,7 +980,8 @@ async def stream_message(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    # Verify that this session belongs to the authenticated user
+
+    # Verify session ownership.
     session = await find_owned_session(
         req.session_id,
         current_user,
@@ -687,9 +993,14 @@ async def stream_message(
         db
     )
 
+    # Save stable identifiers before entering generator.
+    # The generator uses a separate database session.
+    database_session_id = session.id
+
+    # Save user message.
     user_msg = Message(
         id=uuid.uuid4(),
-        session_id=session.id,
+        session_id=database_session_id,
         role="user",
         content=req.content
     )
@@ -697,64 +1008,160 @@ async def stream_message(
     db.add(user_msg)
     await db.commit()
 
-    async def token_generator():
+    logger.info(
+        "Starting SSE stream | User: %s | Session: %s",
+        user_id,
+        agent_session_id
+    )
+
+    async def event_generator():
         full_reply = ""
+        completed = False
 
         try:
-            async for token in agent.stream(
+            async for event in agent.stream_events(
                 user_id,
                 agent_session_id,
                 req.content
             ):
-                full_reply += token
-                yield token
+                event_type = event.get("event")
+                event_data = event.get("data", {})
 
-        except Exception as exc:
-            logger.error("Agent.stream failed: %s", exc)
-            logger.error(traceback.format_exc())
+                if event_type == "status":
+                    logger.info(
+                        "Agent status: %s",
+                        event_data.get("message", "")
+                    )
 
-            fallback = "\n[Error generating response.]"
+                    yield format_sse_event(
+                        "status",
+                        event_data
+                    )
 
-            try:
+                elif event_type == "token":
+                    content = event_data.get("content", "")
+
+                    if content:
+                        full_reply += content
+
+                        yield format_sse_event(
+                            "token",
+                            {"content": content}
+                        )
+
+                elif event_type == "error":
+                    logger.error(
+                        "Agent streaming error: %s",
+                        event_data.get("message", "")
+                    )
+
+                    yield format_sse_event(
+                        "error",
+                        event_data
+                    )
+
+                elif event_type == "done":
+                    completed = True
+                    logger.info("Agent reported streaming completion.")
+
+            if not completed:
+                logger.error(
+                    "Agent stream ended without a done event."
+                )
+
+                yield format_sse_event(
+                    "error",
+                    {
+                        "message": (
+                            "The agent stream ended unexpectedly. "
+                            "The response may be incomplete."
+                        )
+                    }
+                )
+                return
+
+            if not full_reply.strip():
+                full_reply = (
+                    "Sorry, the assistant is temporarily unavailable."
+                )
+
+            # Use an independent database session.
+            async with async_session() as stream_db:
+                stream_session = await stream_db.get(
+                    Session,
+                    database_session_id
+                )
+
+                if stream_session is None:
+                    logger.error(
+                        "Could not find session while saving streamed response."
+                    )
+
+                    yield format_sse_event(
+                        "error",
+                        {"message": "Could not save the conversation."}
+                    )
+                    return
+
+                # Verify ownership again before persistence.
+                if stream_session.user_email != user_id:
+                    logger.error(
+                        "Session ownership changed during streaming."
+                    )
+
+                    yield format_sse_event(
+                        "error",
+                        {"message": "Session ownership validation failed."}
+                    )
+                    return
+
                 assistant_msg = Message(
                     id=uuid.uuid4(),
-                    session_id=session.id,
+                    session_id=database_session_id,
                     role="assistant",
-                    content="Sorry, the assistant is temporarily unavailable."
+                    content=full_reply
                 )
 
-                db.add(assistant_msg)
-                await db.commit()
+                stream_db.add(assistant_msg)
 
-            except Exception:
-                logger.error(
-                    "Failed to save fallback assistant message: %s",
-                    traceback.format_exc()
+                if (
+                    user_id in agent.sessions
+                    and agent_session_id in agent.sessions[user_id]
+                ):
+                    stream_session.title = (
+                        agent.sessions[user_id][agent_session_id]["title"]
+                    )
+
+                await stream_db.commit()
+
+                logger.info(
+                    "Assistant response saved successfully | Session: %s",
+                    agent_session_id
                 )
 
-            yield fallback
-            return
+            yield format_sse_event(
+                "done",
+                {"message": "Response saved successfully."}
+            )
 
-        assistant_msg = Message(
-            id=uuid.uuid4(),
-            session_id=session.id,
-            role="assistant",
-            content=full_reply
-        )
+        except Exception as exc:
+            logger.exception("SSE streaming failed: %s", exc)
 
-        db.add(assistant_msg)
-        await db.commit()
-
-        try:
-            session.title = agent.sessions[user_id][agent_session_id]["title"]
-            await db.commit()
-
-        except Exception:
-            logger.debug(
-                "Could not persist session title after streaming; agent state missing."
+            yield format_sse_event(
+                "error",
+                {
+                    "message": (
+                        "An error occurred while streaming the response."
+                    )
+                }
             )
 
     return StreamingResponse(
-        token_generator(),
-        media_type="text/plain"
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
     )
