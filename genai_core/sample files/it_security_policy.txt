@@ -1,0 +1,12 @@
+IT Security Policy
+
+Document ID: IT-POL-001
+
+All employee passwords must contain at least 14 characters.
+
+Multi-factor authentication is required for remote access.
+
+Lost or stolen company devices must be reported within one hour.
+
+Employees must not store company confidential information
+in personal cloud storage.

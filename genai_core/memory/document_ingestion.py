@@ -2,12 +2,13 @@ from pathlib import Path
 import hashlib
 import logging
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 
 from langchain_community.document_loaders import (
     PyPDFLoader,
     TextLoader
 )
+
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -17,150 +18,70 @@ logger = logging.getLogger(__name__)
 
 class DocumentIngestion:
 
-    def __init__(self, embeddings):
+    ALLOWED_AUTHORITIES = {
+        "Official Policy",
+        "Employee Handbook",
+        "Reference Material",
+        "Informational"
+    }
 
-        self.embeddings = embeddings
+    def __init__(
+        self,
+        embeddings=None,
+        persist_dir="memory/document_store"
+    ):
 
-        # --------------------------------------------------
-        # 1. Storage configuration
-        # --------------------------------------------------
+        self._embeddings = embeddings
 
-        # FAISS storage location:
-        # genai_core/memory/document_store/
+        self.persist_dir = Path(persist_dir)
 
-        self.persist_directory = (
-            Path(__file__).resolve().parent / "document_store"
-        )
+        self.users_dir = self.persist_dir / "users"
+        self.shared_dir = self.persist_dir / "shared"
 
-        self.shared_store = None
+        self.users_dir.mkdir(parents=True, exist_ok=True)
+        self.shared_dir.mkdir(parents=True, exist_ok=True)
+
         self.user_stores = {}
 
-        self.text_splitter = RecursiveCharacterTextSplitter(
+        self.splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200
         )
 
-        # Create storage directory if it doesn't exist.
-        self.persist_directory.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        # Create user storage directory.
-        (self.persist_directory / "users").mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        # Create shared storage directory.
-        (self.persist_directory / "shared").mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        # --------------------------------------------------
-        # 2. Load existing shared FAISS index
-        # --------------------------------------------------
-
-        self.shared_store = self._load_store(
-            self.persist_directory / "shared"
-        )
-
-        # --------------------------------------------------
-        # 3. Log storage configuration
-        # --------------------------------------------------
-
-        logger.info(
-            "FAISS storage directory: %s",
-            self.persist_directory
-        )
-
-        logger.info(
-            "Shared FAISS index loaded: %s",
-            self.shared_store is not None
-        )
-
-        logger.info(
-            "User FAISS storage directory: %s",
-            self.persist_directory / "users"
-        )
+        self.shared_store = self._load_store(self.shared_dir)
 
     # --------------------------------------------------
-    # 2. Generate a safe directory name for each user
+    # USER ID NORMALIZATION
+    # --------------------------------------------------
+
+    def _normalize_user_id(self, user_id):
+
+        if not user_id:
+            raise ValueError("User ID is required.")
+
+        normalized = str(user_id).strip().lower()
+
+        if not normalized:
+            raise ValueError("User ID cannot be empty.")
+
+        return normalized
+
+    # --------------------------------------------------
+    # USER DIRECTORY
     # --------------------------------------------------
 
     def _get_user_directory(self, user_id):
 
-        # --------------------------------------------------
-        # Validate user ID
-        # --------------------------------------------------
-
-        if not user_id:
-
-            raise ValueError(
-                "user_id is required."
-            )
-
-        user_id = str(user_id).strip().lower()
-
-        if not user_id:
-
-            raise ValueError(
-                "user_id cannot be empty."
-            )
-
-        # --------------------------------------------------
-        # Generate SHA-256 hash
-        # --------------------------------------------------
+        normalized_user_id = self._normalize_user_id(user_id)
 
         user_hash = hashlib.sha256(
-            user_id.encode("utf-8")
+            normalized_user_id.encode("utf-8")
         ).hexdigest()
 
-        # --------------------------------------------------
-        # Construct private FAISS directory
-        # --------------------------------------------------
-
-        user_directory = (
-            self.persist_directory
-            / "users"
-            / user_hash
-        )
-
-        # Create directory if necessary.
-        user_directory.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        logger.debug(
-            "Resolved private FAISS directory for user hash %s: %s",
-            user_hash[:12],
-            user_directory
-        )
-
-        return user_directory
+        return self.users_dir / user_hash
 
     # --------------------------------------------------
-    # 3. Calculate document hash
-    # --------------------------------------------------
-
-    def _get_file_hash(self, file_path):
-
-        sha256 = hashlib.sha256()
-
-        with open(file_path, "rb") as file:
-
-            for chunk in iter(
-                lambda: file.read(1024 * 1024),
-                b""
-            ):
-                sha256.update(chunk)
-
-        return sha256.hexdigest()
-
-    # --------------------------------------------------
-    # 4. Load an existing FAISS index
+    # LOAD EXISTING FAISS STORE
     # --------------------------------------------------
 
     def _load_store(self, directory):
@@ -169,111 +90,266 @@ class DocumentIngestion:
 
         index_file = directory / "index.faiss"
 
-        if not index_file.exists():
+        if index_file.exists():
 
-            logger.info(
-                "No existing FAISS index found: %s",
-                directory
-            )
+            try:
 
-            return None
+                logger.info(
+                    "Loading FAISS index: %s",
+                    directory
+                )
 
-        try:
+                return FAISS.load_local(
+                    str(directory),
+                    self.embeddings,
+                    allow_dangerous_deserialization=True
+                )
 
-            store = FAISS.load_local(
-                str(directory),
-                self.embeddings,
-                allow_dangerous_deserialization=True
-            )
+            except Exception:
 
-            logger.info(
-                "FAISS index loaded successfully: %s",
-                directory
-            )
+                logger.exception(
+                    "Failed to load FAISS index: %s",
+                    directory
+                )
 
-            return store
+                raise
 
-        except Exception:
-
-            logger.exception(
-                "Failed to load FAISS index: %s",
-                directory
-            )
-
-            raise
+        return None
 
     # --------------------------------------------------
-    # 5. Get the correct FAISS store
+    # EMBEDDINGS PROPERTY
     # --------------------------------------------------
 
-    def _get_store(self, user_id=None, is_shared=False):
+    @property
+    def embeddings(self):
 
-        if is_shared:
-            return self.shared_store
+        if not hasattr(self, "_embeddings"):
 
-        if not user_id:
-            raise ValueError(
-                "user_id is required for private documents."
+            from langchain_community.embeddings import (
+                HuggingFaceEmbeddings
             )
 
-        user_id = str(user_id)
+            self._embeddings = HuggingFaceEmbeddings(
+                model_name="sentence-transformers/all-MiniLM-L6-v2"
+            )
 
-        if user_id in self.user_stores:
-            return self.user_stores[user_id]
-
-        directory = self._get_user_directory(user_id)
-
-        store = self._load_store(directory)
-
-        self.user_stores[user_id] = store
-
-        return store
+        return self._embeddings
 
     # --------------------------------------------------
-    # 6. Validate document paths and file types
+    # GET PRIVATE STORE
+    # --------------------------------------------------
+
+    def _get_store(self, user_id):
+
+        normalized_user_id = self._normalize_user_id(user_id)
+
+        if normalized_user_id not in self.user_stores:
+
+            directory = self._get_user_directory(
+                normalized_user_id
+            )
+
+            directory.mkdir(
+                parents=True,
+                exist_ok=True
+            )
+
+            self.user_stores[normalized_user_id] = (
+                self._load_store(directory)
+            )
+
+        return self.user_stores[normalized_user_id]
+
+    # --------------------------------------------------
+    # SAVE STORE
+    # --------------------------------------------------
+
+    def _save_store(self, store, directory):
+
+        if store is None:
+            return
+
+        directory = Path(directory)
+
+        directory.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        store.save_local(str(directory))
+
+    # --------------------------------------------------
+    # FILE VALIDATION
     # --------------------------------------------------
 
     def _validate_file(self, file_path):
 
-        if not file_path:
-            raise ValueError(
-                "A document file path is required."
-            )
+        path = Path(file_path).expanduser().resolve(
+            strict=True
+        )
 
-        file_path = Path(file_path).expanduser()
-
-        try:
-
-            file_path = file_path.resolve(strict=True)
-
-        except FileNotFoundError:
-
-            raise FileNotFoundError(
-                f"Document file not found: {file_path}"
-            )
-
-        if not file_path.is_file():
+        if not path.is_file():
 
             raise ValueError(
-                f"The provided path is not a file: {file_path}"
+                "The provided path is not a file."
             )
 
-        supported_extensions = {
-            ".pdf",
-            ".txt"
-        }
-
-        if file_path.suffix.lower() not in supported_extensions:
+        if path.suffix.lower() not in {".pdf", ".txt"}:
 
             raise ValueError(
-                "Unsupported document format. "
                 "Only PDF and TXT files are supported."
             )
 
-        return file_path
+        return path
 
     # --------------------------------------------------
-    # 7. Load and ingest a document
+    # FILE HASH
+    # --------------------------------------------------
+
+    def _get_file_hash(self, file_path):
+
+        sha256 = hashlib.sha256()
+
+        with open(file_path, "rb") as file:
+
+            for block in iter(
+                lambda: file.read(65536),
+                b""
+            ):
+
+                sha256.update(block)
+
+        return sha256.hexdigest()
+
+    # --------------------------------------------------
+    # FIND EXISTING DOCUMENT CHUNKS
+    # --------------------------------------------------
+
+    def _get_document_ids(
+        self,
+        store,
+        source_name,
+        file_hash=None
+    ):
+
+        matching_ids = []
+
+        if store is None:
+            return matching_ids
+
+        for doc_id in list(
+            store.index_to_docstore_id.values()
+        ):
+
+            doc = store.docstore.search(doc_id)
+
+            if not doc or not hasattr(doc, "metadata"):
+                continue
+
+            metadata = doc.metadata
+
+            if metadata.get("source") != source_name:
+                continue
+
+            if file_hash is not None:
+
+                if metadata.get("file_hash") != file_hash:
+                    continue
+
+            matching_ids.append(doc_id)
+
+        return matching_ids
+
+    # --------------------------------------------------
+    # COMPARE DOCUMENT METADATA
+    # --------------------------------------------------
+
+    def _metadata_matches(
+        self,
+        store,
+        document_ids,
+        new_metadata
+    ):
+
+        if not document_ids:
+            return False
+
+        fields_to_compare = [
+            "document_name",
+            "document_version",
+            "effective_date",
+            "authority",
+            "owner_department",
+            "user_id",
+            "is_shared"
+        ]
+
+        for doc_id in document_ids:
+
+            doc = store.docstore.search(doc_id)
+
+            if not doc or not hasattr(doc, "metadata"):
+                return False
+
+            existing_metadata = doc.metadata
+
+            for field in fields_to_compare:
+
+                if (
+                    existing_metadata.get(field)
+                    != new_metadata.get(field)
+                ):
+
+                    return False
+
+        return True
+
+    # --------------------------------------------------
+    # UPDATE EXISTING DOCUMENT METADATA
+    # --------------------------------------------------
+
+    def _update_document_metadata(
+        self,
+        store,
+        document_ids,
+        metadata
+    ):
+
+        updated_count = 0
+
+        for doc_id in document_ids:
+
+            doc = store.docstore.search(doc_id)
+
+            if not doc or not hasattr(doc, "metadata"):
+                continue
+
+            # Preserve chunk-specific metadata such as
+            # PDF page numbers.
+
+            doc.metadata.update(metadata)
+
+            updated_count += 1
+
+        return updated_count
+
+    # --------------------------------------------------
+    # DELETE DOCUMENT CHUNKS
+    # --------------------------------------------------
+
+    def _delete_documents(
+        self,
+        store,
+        document_ids
+    ):
+
+        if not document_ids:
+            return
+
+        store.delete(ids=document_ids)
+
+    # --------------------------------------------------
+    # LOAD AND INGEST DOCUMENT
     # --------------------------------------------------
 
     def load(
@@ -281,181 +357,297 @@ class DocumentIngestion:
         file_path,
         user_id=None,
         is_shared=False,
-        source_name=None
+        source_name=None,
+        document_name=None,
+        document_version=None,
+        effective_date=None,
+        authority=None,
+        owner_department=None
     ):
 
-        """
-        Load a PDF or TXT document and add its chunks
-        to either the shared or user-specific FAISS index.
+        # ----------------------------------------------
+        # VALIDATE USER
+        # ----------------------------------------------
 
-        Args:
-            file_path: Local path to the document.
-            user_id: Authenticated user's ID or email.
-            is_shared: Whether the document is shared.
-            source_name: Original uploaded filename.
+        if not is_shared:
 
-        Returns:
-            A message describing the ingestion result.
-        """
-
-        if not is_shared and not user_id:
-
-            raise ValueError(
-                "user_id is required for private documents."
+            user_id = self._normalize_user_id(
+                user_id
             )
-
-        if user_id is not None:
-            user_id = str(user_id)
-
-        file_path = self._validate_file(file_path)
-
-        # Preserve the original uploaded filename.
-        if source_name:
-
-            source_name = Path(source_name).name
 
         else:
 
-            source_name = file_path.name
+            user_id = None
 
-        # Calculate document hash.
-        file_hash = self._get_file_hash(file_path)
+        # ----------------------------------------------
+        # VALIDATE FILE
+        # ----------------------------------------------
 
-        logger.info(
-            "Starting document ingestion: %s",
-            source_name
+        path = self._validate_file(file_path)
+
+        source_name = (
+            Path(source_name).name
+            if source_name
+            else path.name
         )
 
-        # --------------------------------------------------
-        # Load document content
-        # --------------------------------------------------
+        if not source_name:
 
-        try:
+            raise ValueError(
+                "Invalid document source name."
+            )
 
-            if file_path.suffix.lower() == ".pdf":
+        document_name = (
+            document_name or source_name
+        )
 
-                loader = PyPDFLoader(str(file_path))
+        # ----------------------------------------------
+        # VALIDATE AUTHORITY
+        # ----------------------------------------------
 
-            else:
+        if authority is not None:
 
-                loader = TextLoader(
-                    str(file_path),
-                    encoding="utf-8",
-                    autodetect_encoding=True
+            authority = str(authority).strip()
+
+            if authority not in self.ALLOWED_AUTHORITIES:
+
+                raise ValueError(
+                    f"Invalid authority: {authority}"
                 )
 
-            documents = loader.load()
+        # ----------------------------------------------
+        # VALIDATE EFFECTIVE DATE
+        # ----------------------------------------------
 
-        except Exception as exc:
+        if effective_date is not None:
 
-            logger.exception(
-                "Failed to load document: %s",
+            try:
+
+                effective_date = date.fromisoformat(
+                    str(effective_date)
+                ).isoformat()
+
+            except ValueError:
+
+                raise ValueError(
+                    "effective_date must use YYYY-MM-DD format."
+                )
+
+        # ----------------------------------------------
+        # COMPUTE FILE HASH
+        # ----------------------------------------------
+
+        file_hash = self._get_file_hash(path)
+
+        upload_date = datetime.now(
+            timezone.utc
+        ).isoformat()
+
+        # ----------------------------------------------
+        # BUILD METADATA
+        # ----------------------------------------------
+
+        metadata = {
+            "source": source_name,
+            "document_name": document_name,
+            "document_version": document_version,
+            "effective_date": effective_date,
+            "authority": authority,
+            "owner_department": owner_department,
+            "user_id": user_id,
+            "is_shared": is_shared,
+            "file_hash": file_hash,
+            "upload_date": upload_date
+        }
+
+        # ----------------------------------------------
+        # SELECT FAISS STORE
+        # ----------------------------------------------
+
+        if is_shared:
+
+            store = self.shared_store
+            directory = self.shared_dir
+
+        else:
+
+            store = self._get_store(user_id)
+
+            directory = self._get_user_directory(
+                user_id
+            )
+
+        # ----------------------------------------------
+        # CHECK FOR SAME FILENAME + SAME CONTENT
+        # ----------------------------------------------
+
+        existing_same_hash = self._get_document_ids(
+            store,
+            source_name,
+            file_hash
+        )
+
+        if existing_same_hash:
+
+            # Same content and same metadata:
+            # Do not create duplicate chunks.
+
+            if self._metadata_matches(
+                store,
+                existing_same_hash,
+                metadata
+            ):
+
+                logger.info(
+                    "Duplicate upload skipped: %s",
+                    source_name
+                )
+
+                return {
+                    "status": "skipped",
+                    "reason": "Document already exists with identical content and metadata.",
+                    "source": source_name,
+                    "file_hash": file_hash,
+                    "chunks": len(existing_same_hash)
+                }
+
+            # Same content but different metadata:
+            # Update metadata without generating embeddings.
+
+            updated_count = self._update_document_metadata(
+                store,
+                existing_same_hash,
+                metadata
+            )
+
+            self._save_store(
+                store,
+                directory
+            )
+
+            logger.info(
+                "Document metadata updated: %s",
                 source_name
             )
 
-            raise RuntimeError(
-                f"Unable to read document '{source_name}': {exc}"
-            ) from exc
+            return {
+                "status": "metadata_updated",
+                "source": source_name,
+                "file_hash": file_hash,
+                "chunks": updated_count
+            }
+
+        # ----------------------------------------------
+        # CHECK FOR SAME FILENAME + DIFFERENT CONTENT
+        # ----------------------------------------------
+
+        existing_same_source = self._get_document_ids(
+            store,
+            source_name
+        )
+
+        # Only delete modern documents with file_hash.
+        # Preserve legacy documents without file_hash.
+
+        modern_document_ids = []
+
+        if store is not None:
+
+            for doc_id in existing_same_source:
+
+                doc = store.docstore.search(doc_id)
+
+                if not doc or not hasattr(doc, "metadata"):
+                    continue
+
+                if doc.metadata.get("file_hash"):
+
+                    modern_document_ids.append(doc_id)
+
+        if modern_document_ids:
+
+            logger.info(
+                "Replacing existing document: %s",
+                source_name
+            )
+
+            self._delete_documents(
+                store,
+                modern_document_ids
+            )
+
+        # ----------------------------------------------
+        # LOAD DOCUMENT CONTENT
+        # ----------------------------------------------
+
+        if path.suffix.lower() == ".pdf":
+
+            loader = PyPDFLoader(str(path))
+
+        else:
+
+            loader = TextLoader(
+                str(path),
+                encoding="utf-8"
+            )
+
+        documents = loader.load()
 
         if not documents:
 
-            return (
-                f"No readable content found in '{source_name}'."
+            raise ValueError(
+                "The uploaded document contains no readable content."
             )
 
-        # --------------------------------------------------
-        # Attach metadata
-        # --------------------------------------------------
+        # ----------------------------------------------
+        # ATTACH METADATA
+        # ----------------------------------------------
 
-        for document in documents:
+        for doc in documents:
 
-            document.metadata["source"] = source_name
+            doc.metadata.update(metadata)
 
-            document.metadata["file_hash"] = file_hash
+        # ----------------------------------------------
+        # SPLIT DOCUMENT INTO CHUNKS
+        # ----------------------------------------------
 
-            document.metadata["user_id"] = (
-                None if is_shared else user_id
-            )
-
-            document.metadata["is_shared"] = bool(is_shared)
-
-        # --------------------------------------------------
-        # Split into chunks
-        # --------------------------------------------------
-
-        chunks = self.text_splitter.split_documents(
+        chunks = self.splitter.split_documents(
             documents
         )
 
         if not chunks:
 
-            return (
-                f"No text content found in '{source_name}'."
+            raise ValueError(
+                "Document splitting produced no chunks."
             )
 
-        logger.info(
-            "Document split into %s chunks: %s",
-            len(chunks),
-            source_name
-        )
+        # ----------------------------------------------
+        # ADD DOCUMENT TO FAISS
+        # ----------------------------------------------
 
-        # --------------------------------------------------
-        # Determine storage location
-        # --------------------------------------------------
+        if store is None:
 
-        if is_shared:
-
-            directory = (
-                self.persist_directory / "shared"
+            store = FAISS.from_documents(
+                chunks,
+                self.embeddings
             )
-
-            store = self.shared_store
 
         else:
 
-            directory = self._get_user_directory(user_id)
+            store.add_documents(chunks)
 
-            store = self._get_store(
-                user_id=user_id
-            )
+        # ----------------------------------------------
+        # SAVE INDEX
+        # ----------------------------------------------
 
-        # --------------------------------------------------
-        # Initialize FAISS or update existing index
-        # --------------------------------------------------
+        self._save_store(
+            store,
+            directory
+        )
 
-        try:
-
-            if store is None:
-
-                store = FAISS.from_documents(
-                    chunks,
-                    self.embeddings
-                )
-
-            else:
-
-                store.add_documents(chunks)
-
-            directory.mkdir(
-                parents=True,
-                exist_ok=True
-            )
-
-            store.save_local(str(directory))
-
-        except Exception as exc:
-
-            logger.exception(
-                "Failed to create or update FAISS index."
-            )
-
-            raise RuntimeError(
-                f"Failed to index document '{source_name}': {exc}"
-            ) from exc
-
-        # --------------------------------------------------
-        # Update in-memory reference
-        # --------------------------------------------------
+        # ----------------------------------------------
+        # UPDATE IN-MEMORY STORE
+        # ----------------------------------------------
 
         if is_shared:
 
@@ -465,27 +657,21 @@ class DocumentIngestion:
 
             self.user_stores[user_id] = store
 
-        document_type = (
-            "shared" if is_shared else "private"
-        )
-
         logger.info(
-            "Document ingestion completed: %s, chunks=%s, "
-            "type=%s, hash=%s",
+            "Document ingested successfully: %s (%s chunks)",
             source_name,
-            len(chunks),
-            document_type,
-            file_hash
+            len(chunks)
         )
 
-        return (
-            f"Document '{source_name}' ingested successfully. "
-            f"{len(chunks)} chunks added. "
-            f"Document type: {document_type}."
-        )
+        return {
+            "status": "ingested",
+            "source": source_name,
+            "file_hash": file_hash,
+            "chunks": len(chunks)
+        }
 
     # --------------------------------------------------
-    # 8. Search shared and user-specific documents
+    # DOCUMENT SEARCH
     # --------------------------------------------------
 
     def search(
@@ -496,196 +682,246 @@ class DocumentIngestion:
         source=None
     ):
 
-        """
-        Search shared and requesting user's private indexes.
+        user_id = self._normalize_user_id(
+            user_id
+        )
 
-        Returns the best K document chunks ranked by FAISS
-        L2 distance.
-        """
-
-        if not user_id:
+        if not query or not str(query).strip():
 
             raise ValueError(
-                "user_id is required for document retrieval."
+                "Search query cannot be empty."
             )
 
-        if not query or not query.strip():
+        if not isinstance(k, int) or not 1 <= k <= 20:
 
             raise ValueError(
-                "A search query is required."
+                "k must be an integer between 1 and 20."
             )
-
-        if k < 1:
-
-            raise ValueError(
-                "k must be greater than zero."
-            )
-
-        user_id = str(user_id)
 
         results = []
 
-        # --------------------------------------------------
-        # Identify indexes to search
-        # --------------------------------------------------
-
-        stores_to_search = [
-            ("shared", self.shared_store)
+        stores = [
+            self.shared_store,
+            self._get_store(user_id)
         ]
 
-        user_store = self._get_store(
-            user_id=user_id
-        )
+        # ----------------------------------------------
+        # SEARCH SHARED AND PRIVATE INDEXES
+        # ----------------------------------------------
 
-        stores_to_search.append(
-            ("private", user_store)
-        )
-
-        # --------------------------------------------------
-        # Search each index
-        # --------------------------------------------------
-
-        for store_type, store in stores_to_search:
+        for store in stores:
 
             if store is None:
                 continue
-
-            search_filter = (
-                {"source": source} if source else None
-            )
 
             try:
 
                 matches = store.similarity_search_with_score(
                     query,
-                    k=k,
-                    filter=search_filter
+                    k=k
                 )
+
+                for doc, score in matches:
+
+                    if source:
+
+                        if (
+                            doc.metadata.get("source")
+                            != source
+                        ):
+
+                            continue
+
+                    results.append(
+                        (doc, score)
+                    )
 
             except Exception:
 
                 logger.exception(
-                    "FAISS search failed for %s index.",
-                    store_type
+                    "Document search failed."
                 )
 
-                raise
-
-            for document, score in matches:
-
-                results.append({
-
-                    "document": document,
-
-                    "score": float(score),
-
-                    "store_type": store_type
-
-                })
-
-        # --------------------------------------------------
-        # Rank results
-        # --------------------------------------------------
+        # ----------------------------------------------
+        # SORT BY FAISS DISTANCE
+        # ----------------------------------------------
 
         results.sort(
-            key=lambda item: item["score"]
+            key=lambda item: item[1]
         )
 
-        final_results = results[:k]
-
-        # --------------------------------------------------
-        # Retrieval diagnostics
-        # --------------------------------------------------
+        final_results = [
+            doc
+            for doc, score in results[:k]
+        ]
 
         logger.info(
-            "FAISS search completed. User=%s, "
-            "results=%s, query=%s",
+            "Document search completed: user=%s results=%s",
             user_id,
-            len(final_results),
-            query
+            len(final_results)
         )
 
-        for i, item in enumerate(final_results, start=1):
-
-            document = item["document"]
-
-            logger.info(
-                "Retrieved chunk %s | Store=%s | "
-                "Distance=%.4f | Source=%s | "
-                "Content length=%s",
-                i,
-                item["store_type"],
-                item["score"],
-                document.metadata.get("source", "Unknown"),
-                len(document.page_content)
-            )
-
-        # Keep the return format compatible with agent.py.
-        return [
-            item["document"]
-            for item in final_results
-        ]
+        return final_results
 
     # --------------------------------------------------
-    # 9. List available document sources
+    # LIST DOCUMENT SOURCES
     # --------------------------------------------------
 
-    def list_sources(self, user_id=None):
+    def list_sources(self, user_id):
 
-        """
-        List shared and optionally user-specific sources.
-        """
+        user_id = self._normalize_user_id(
+            user_id
+        )
 
-        stores_to_check = [
-            ("shared", self.shared_store)
+        results = {}
+
+        stores = [
+            ("shared", self.shared_store),
+            ("private", self._get_store(user_id))
         ]
 
-        if user_id:
-
-            user_store = self._get_store(
-                user_id=str(user_id)
-            )
-
-            stores_to_check.append(
-                ("private", user_store)
-            )
-
-        sources = {}
-
-        for store_type, store in stores_to_check:
+        for store_type, store in stores:
 
             if store is None:
                 continue
 
-            for doc_id in store.index_to_docstore_id.values():
+            for doc_id in list(
+                store.index_to_docstore_id.values()
+            ):
 
-                document = store.docstore.search(doc_id)
+                doc = store.docstore.search(doc_id)
 
-                if isinstance(document, str):
+                if not doc or not hasattr(doc, "metadata"):
                     continue
 
-                source = document.metadata.get(
+                source = doc.metadata.get(
                     "source",
-                    "Unknown"
+                    "unknown"
                 )
 
-                key = (store_type, source)
+                key = (
+                    store_type,
+                    source
+                )
 
-                if key not in sources:
-                    sources[key] = 0
+                if key not in results:
 
-                sources[key] += 1
+                    results[key] = {
+                        "source": source,
+                        "type": store_type,
+                        "chunks": 0
+                    }
 
-        return [
+                results[key]["chunks"] += 1
 
-            {
-                "source": source,
-                "type": store_type,
-                "chunks": count
-            }
+        return sorted(
+            results.values(),
+            key=lambda item: (
+                item["type"],
+                item["source"]
+            )
+        )
 
-            for (store_type, source), count
-            in sorted(sources.items())
+    # --------------------------------------------------
+    # LIST DOCUMENTS
+    # --------------------------------------------------
 
+    def list_documents(self, user_id):
+
+        user_id = self._normalize_user_id(
+            user_id
+        )
+
+        results = {}
+
+        stores = [
+            ("shared", self.shared_store),
+            ("private", self._get_store(user_id))
         ]
 
+        for store_type, store in stores:
+
+            if store is None:
+                continue
+
+            for doc_id in list(
+                store.index_to_docstore_id.values()
+            ):
+
+                doc = store.docstore.search(doc_id)
+
+                if not doc or not hasattr(doc, "metadata"):
+                    continue
+
+                metadata = doc.metadata
+
+                source = metadata.get(
+                    "source",
+                    "unknown"
+                )
+
+                file_hash = metadata.get(
+                    "file_hash"
+                )
+
+                upload_date = metadata.get(
+                    "upload_date"
+                )
+
+                # Legacy documents may not have upload_date.
+                # Use their individual doc ID to avoid incorrectly
+                # grouping unrelated legacy chunks.
+
+                if upload_date:
+
+                    group_key = (
+                        store_type,
+                        source,
+                        file_hash,
+                        upload_date
+                    )
+
+                else:
+
+                    group_key = (
+                        store_type,
+                        source,
+                        file_hash,
+                        doc_id
+                    )
+
+                if group_key not in results:
+
+                    results[group_key] = {
+                        "source": source,
+                        "type": store_type,
+                        "file_hash": file_hash,
+                        "upload_date": upload_date,
+                        "document_name": metadata.get(
+                            "document_name"
+                        ),
+                        "document_version": metadata.get(
+                            "document_version"
+                        ),
+                        "effective_date": metadata.get(
+                            "effective_date"
+                        ),
+                        "authority": metadata.get(
+                            "authority"
+                        ),
+                        "owner_department": metadata.get(
+                            "owner_department"
+                        ),
+                        "chunks": 0
+                    }
+
+                results[group_key]["chunks"] += 1
+
+        return sorted(
+            results.values(),
+            key=lambda item: (
+                item["type"],
+                item["source"],
+                item["upload_date"] or ""
+            )
+        )
