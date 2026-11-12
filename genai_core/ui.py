@@ -257,7 +257,7 @@ if new_persona != current_persona:
 
 
 # ==================================================
-# DOCUMENT UPLOAD - SIDEBAR (MULTIPLE FILES)
+# DOCUMENT UPLOAD - SIDEBAR (MULTIPLE FILES + METADATA)
 # ==================================================
 
 st.sidebar.markdown("---")
@@ -265,8 +265,8 @@ st.sidebar.subheader("Document Upload")
 
 st.sidebar.caption(
     "Upload multiple PDF or TXT documents to your private "
-    "RAG knowledge base. Only your authenticated account "
-    "can retrieve these documents."
+    "RAG knowledge base. You can provide separate metadata "
+    "for each document."
 )
 
 
@@ -283,6 +283,83 @@ uploaded_files = st.sidebar.file_uploader(
     key="document_uploader"
 )
 
+
+# --------------------------------------------------
+# COLLECT METADATA FOR EACH UPLOADED FILE
+# --------------------------------------------------
+
+document_metadata = {}
+
+authority_options = [
+    "Not specified",
+    "Official Policy",
+    "Employee Handbook",
+    "Reference Material",
+    "Informational"
+]
+
+if uploaded_files:
+
+    st.sidebar.markdown("### Document Metadata")
+
+    for index, uploaded_file in enumerate(uploaded_files):
+
+        filename = uploaded_file.name
+
+        with st.sidebar.expander(
+            f"Metadata: {filename}",
+            expanded=False
+        ):
+
+            document_name = st.text_input(
+                "Document Name",
+                value=filename,
+                key=f"document_name_{index}_{filename}"
+            )
+
+            document_version = st.text_input(
+                "Document Version",
+                placeholder="Example: v1.0",
+                key=f"document_version_{index}_{filename}"
+            )
+
+            effective_date = st.date_input(
+                "Effective Date",
+                value=None,
+                help="Select the date when this document becomes effective.",
+                key=f"effective_date_{index}_{filename}"
+            )
+
+            authority = st.selectbox(
+                "Document Authority",
+                options=authority_options,
+                key=f"authority_{index}_{filename}"
+            )
+
+            owner_department = st.text_input(
+                "Owner Department",
+                placeholder="Example: Human Resources",
+                key=f"owner_department_{index}_{filename}"
+            )
+
+        document_metadata[index] = {
+            "document_name": document_name.strip(),
+            "document_version": document_version.strip(),
+            "effective_date": (
+                effective_date.isoformat()
+                if effective_date else ""
+            ),
+            "authority": (
+                None if authority == "Not specified"
+                else authority
+            ),
+            "owner_department": owner_department.strip()
+        }
+
+
+# --------------------------------------------------
+# UPLOAD AND INGEST DOCUMENTS
+# --------------------------------------------------
 
 if st.sidebar.button(
     "Upload and Ingest Documents",
@@ -302,7 +379,6 @@ if st.sidebar.button(
         failed_files = []
 
         progress_bar = st.sidebar.progress(0)
-
         status_placeholder = st.sidebar.empty()
 
         for index, uploaded_file in enumerate(uploaded_files):
@@ -317,14 +393,34 @@ if st.sidebar.button(
 
                 file_bytes = uploaded_file.getvalue()
 
+                metadata = document_metadata.get(index, {})
+
+                # Send the file and its metadata together.
                 response = requests.post(
                     f"{API_URL}/documents/upload",
                     headers=get_auth_headers(),
                     files={
                         "file": (
-                            uploaded_file.name,
+                            filename,
                             file_bytes,
                             uploaded_file.type
+                        )
+                    },
+                    data={
+                        "document_name": metadata.get(
+                            "document_name", filename
+                        ),
+                        "document_version": metadata.get(
+                            "document_version", ""
+                        ),
+                        "effective_date": metadata.get(
+                            "effective_date", ""
+                        ),
+                        "authority": metadata.get(
+                            "authority"
+                        ) or "",
+                        "owner_department": metadata.get(
+                            "owner_department", ""
                         )
                     },
                     timeout=(10, 300)
@@ -745,6 +841,10 @@ try:
             f"{msgs_resp.status_code} {msgs_resp.text}"
         )
         msgs = []
+
+    # TEMPORARY DEBUG INFORMATION
+    #st.caption(f"Debug: Session ID = {session_id}")
+    #st.caption(f"Debug: Messages Loaded = {len(msgs)}")
 
 except requests.exceptions.RequestException as exc:
     st.error(f"Could not load messages: {exc}")

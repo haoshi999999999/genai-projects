@@ -1,15 +1,13 @@
 import os
 import uuid
 import hashlib
-import traceback
 import bcrypt
 import json
 import logging
-
 import asyncio
 import tempfile
-from pathlib import Path
 
+from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -26,7 +24,8 @@ from fastapi import (
     Depends,
     HTTPException,
     UploadFile,
-    File
+    File,
+    Form
 )
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,17 +45,20 @@ from db.models import User, Session, Message
 from agent.agent import Agent
 
 
-# --------------------------------------------------
-# LOGGING
-# --------------------------------------------------
+# ==================================================
+# 1. LOGGING
+# ==================================================
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO
+)
+
 logger = logging.getLogger(__name__)
 
 
-# --------------------------------------------------
-# CONFIGURATION
-# --------------------------------------------------
+# ==================================================
+# 2. CONFIGURATION
+# ==================================================
 
 load_dotenv()
 
@@ -73,31 +75,39 @@ FALLBACK_GROQ_MODEL = os.getenv(
 )
 
 if not GROQ_API_KEY:
+
     raise RuntimeError(
         "GROQ_API_KEY is missing. "
         "Add it to your .env file or environment."
     )
 
 
-# --------------------------------------------------
-# AUTHENTICATION CONFIGURATION
-# --------------------------------------------------
+# ==================================================
+# 3. AUTHENTICATION CONFIGURATION
+# ==================================================
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 
 if not SECRET_KEY:
-    raise RuntimeError("JWT_SECRET_KEY is missing from .env")
+
+    raise RuntimeError(
+        "JWT_SECRET_KEY is missing from .env"
+    )
 
 ALGORITHM = "HS256"
+
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 password_hash = PasswordHash.recommended()
-security = HTTPBearer(auto_error=False)
+
+security = HTTPBearer(
+    auto_error=False
+)
 
 
-# --------------------------------------------------
-# DOCUMENT UPLOAD CONFIGURATION
-# --------------------------------------------------
+# ==================================================
+# 4. DOCUMENT UPLOAD CONFIGURATION
+# ==================================================
 
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
 
@@ -106,16 +116,32 @@ ALLOWED_DOCUMENT_EXTENSIONS = {
     ".txt"
 }
 
+ALLOWED_DOCUMENT_AUTHORITIES = {
+    "Official Policy",
+    "Employee Handbook",
+    "Reference Material",
+    "Informational"
+}
 
-# --------------------------------------------------
-# GROQ CLIENT WRAPPER
-# --------------------------------------------------
+
+# ==================================================
+# 5. GROQ CLIENT WRAPPER
+# ==================================================
 
 class GroqLLM:
 
-    def __init__(self, api_key: str, model_name: str):
-        self.client = AsyncGroq(api_key=api_key)
+    def __init__(
+        self,
+        api_key: str,
+        model_name: str
+    ):
+
+        self.client = AsyncGroq(
+            api_key=api_key
+        )
+
         self.chat = self.client.chat
+
         self.model_name = model_name
 
     async def invoke(
@@ -124,6 +150,7 @@ class GroqLLM:
         *,
         stream: bool = False
     ):
+
         messages = [
             {
                 "role": "system",
@@ -139,6 +166,7 @@ class GroqLLM:
         ]
 
         try:
+
             response = await self.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
@@ -147,7 +175,11 @@ class GroqLLM:
             )
 
         except NotFoundError:
-            logger.error("Model not found: %s", self.model_name)
+
+            logger.error(
+                "Model not found: %s",
+                self.model_name
+            )
 
             if not FALLBACK_GROQ_MODEL:
                 raise
@@ -168,38 +200,55 @@ class GroqLLM:
 
         content = response.choices[0].message.content
 
-        logger.info("Groq model: %s", self.model_name)
+        logger.info(
+            "Groq model: %s",
+            self.model_name
+        )
 
         if not content or not content.strip():
-            raise RuntimeError("Groq returned an empty response.")
+
+            raise RuntimeError(
+                "Groq returned an empty response."
+            )
 
         return content.strip()
 
 
-# --------------------------------------------------
-# INITIALIZE LLM AND AGENT
-# --------------------------------------------------
+# ==================================================
+# 6. INITIALIZE LLM AND AGENT
+# ==================================================
 
 llm = GroqLLM(
     api_key=GROQ_API_KEY,
     model_name=GROQ_MODEL
 )
 
-agent = Agent(llm=llm)
+agent = Agent(
+    llm=llm
+)
 
 
-# --------------------------------------------------
-# FASTAPI APPLICATION
-# --------------------------------------------------
+# ==================================================
+# 7. FASTAPI APPLICATION
+# ==================================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting GenAI Agent API.")
+
+    logger.info(
+        "Starting GenAI Agent API."
+    )
+
     yield
-    logger.info("Shutting down GenAI Agent API.")
+
+    logger.info(
+        "Shutting down GenAI Agent API."
+    )
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -213,20 +262,23 @@ app.add_middleware(
 )
 
 
-# --------------------------------------------------
-# DATABASE HELPERS
-# --------------------------------------------------
+# ==================================================
+# 8. DATABASE HELPERS
+# ==================================================
 
 async def get_db():
+
     async with async_session() as db:
+
         yield db
 
 
-# --------------------------------------------------
-# PASSWORD HELPERS
-# --------------------------------------------------
+# ==================================================
+# 9. PASSWORD HELPERS
+# ==================================================
 
 def hash_password(password: str) -> str:
+
     return password_hash.hash(password)
 
 
@@ -237,6 +289,7 @@ def verify_password(
 
     # Argon2 password hashes
     if hashed_password.startswith("$argon2"):
+
         return password_hash.verify(
             password,
             hashed_password
@@ -246,6 +299,7 @@ def verify_password(
     if hashed_password.startswith(
         ("$2a$", "$2b$", "$2y$")
     ):
+
         return bcrypt.checkpw(
             password.encode("utf-8"),
             hashed_password.encode("utf-8")
@@ -253,8 +307,9 @@ def verify_password(
 
     # Legacy SHA-256 password hashes
     if len(hashed_password) == 64:
+
         legacy_hash = hashlib.sha256(
-            password.encode()
+            password.encode("utf-8")
         ).hexdigest()
 
         return secrets.compare_digest(
@@ -265,11 +320,12 @@ def verify_password(
     return False
 
 
-# --------------------------------------------------
-# JWT HELPERS
-# --------------------------------------------------
+# ==================================================
+# 10. JWT HELPERS
+# ==================================================
 
 def create_access_token(email: str):
+
     expire = datetime.now(
         timezone.utc
     ) + timedelta(
@@ -288,9 +344,9 @@ def create_access_token(email: str):
     )
 
 
-# --------------------------------------------------
-# AUTHENTICATION DEPENDENCY
-# --------------------------------------------------
+# ==================================================
+# 11. AUTHENTICATION DEPENDENCY
+# ==================================================
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -298,6 +354,7 @@ async def get_current_user(
 ):
 
     if credentials is None:
+
         raise HTTPException(
             status_code=401,
             detail="Authentication required"
@@ -306,6 +363,7 @@ async def get_current_user(
     token = credentials.credentials
 
     try:
+
         payload = jwt.decode(
             token,
             SECRET_KEY,
@@ -315,24 +373,29 @@ async def get_current_user(
         email = payload.get("sub")
 
         if not email:
+
             raise HTTPException(
                 status_code=401,
                 detail="Invalid authentication token"
             )
 
     except jwt.InvalidTokenError:
+
         raise HTTPException(
             status_code=401,
             detail="Invalid or expired token"
         )
 
     result = await db.execute(
-        select(User).where(User.email == email)
+        select(User).where(
+            User.email == email
+        )
     )
 
     user = result.scalar_one_or_none()
 
     if not user:
+
         raise HTTPException(
             status_code=401,
             detail="User not found"
@@ -341,9 +404,9 @@ async def get_current_user(
     return user
 
 
-# --------------------------------------------------
-# SESSION OWNERSHIP VALIDATION
-# --------------------------------------------------
+# ==================================================
+# 12. SESSION OWNERSHIP VALIDATION
+# ==================================================
 
 async def find_owned_session(
     session_id: uuid.UUID,
@@ -361,6 +424,7 @@ async def find_owned_session(
     session = result.scalar_one_or_none()
 
     if not session:
+
         raise HTTPException(
             status_code=404,
             detail="Session not found"
@@ -369,9 +433,9 @@ async def find_owned_session(
     return session
 
 
-# --------------------------------------------------
-# INITIALIZE AGENT SESSION
-# --------------------------------------------------
+# ==================================================
+# 13. INITIALIZE AGENT SESSION
+# ==================================================
 
 async def initialize_agent_session(
     session: Session,
@@ -379,20 +443,26 @@ async def initialize_agent_session(
 ):
 
     user_id = session.user_email
+
     session_id = str(session.id)
 
     if user_id not in agent.sessions:
+
         agent.sessions[user_id] = {}
 
     if session_id in agent.sessions[user_id]:
+
         agent.sessions[user_id][session_id]["persona"] = (
             session.persona
         )
+
         return user_id, session_id
 
     result = await db.execute(
         select(Message)
-        .where(Message.session_id == session.id)
+        .where(
+            Message.session_id == session.id
+        )
         .order_by(
             Message.created_at.asc(),
             Message.id.asc()
@@ -402,60 +472,79 @@ async def initialize_agent_session(
     stored_messages = result.scalars().all()
 
     agent.sessions[user_id][session_id] = {
+
         "title": session.title,
+
         "persona": session.persona,
+
         "messages": [
+
             {
                 "role": message.role,
                 "content": message.content
             }
+
             for message in stored_messages
+
         ]
+
     }
 
     return user_id, session_id
 
 
-# --------------------------------------------------
-# REQUEST MODELS
-# --------------------------------------------------
+# ==================================================
+# 14. REQUEST MODELS
+# ==================================================
 
 class RegisterRequest(BaseModel):
+
     email: str
+
     password: str
 
 
 class TestLLMRequest(BaseModel):
+
     prompt: str
 
 
 class LoginRequest(BaseModel):
+
     email: str
+
     password: str
 
 
 class CreateSessionRequest(BaseModel):
+
     persona: str = "default"
+
     title: str = "New Chat"
 
 
 class MessageRequest(BaseModel):
+
     session_id: uuid.UUID
+
     content: str
 
 
 class PersonaUpdate(BaseModel):
+
     session_id: uuid.UUID
+
     persona: str
 
 
 class SessionRequest(BaseModel):
+
     session_id: uuid.UUID
 
 
-# --------------------------------------------------
-# AUTHENTICATION ENDPOINTS
-# --------------------------------------------------
+# ==================================================
+# 15. AUTHENTICATION ENDPOINTS
+# ==================================================
 
 @app.post("/register")
 async def register(
@@ -463,27 +552,49 @@ async def register(
     db: AsyncSession = Depends(get_db)
 ):
 
+    email = req.email.strip().lower()
+
+    if not email:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Email is required."
+        )
+
+    if not req.password:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Password is required."
+        )
+
     result = await db.execute(
-        select(User).where(User.email == req.email)
+        select(User).where(
+            User.email == email
+        )
     )
 
     existing_user = result.scalar_one_or_none()
 
     if existing_user:
+
         raise HTTPException(
             status_code=400,
             detail="User already exists"
         )
 
     user = User(
-        email=req.email,
+        email=email,
         password_hash=hash_password(req.password)
     )
 
     db.add(user)
+
     await db.commit()
 
-    return {"status": "registered"}
+    return {
+        "status": "registered"
+    }
 
 
 @app.post("/login")
@@ -492,8 +603,12 @@ async def login(
     db: AsyncSession = Depends(get_db)
 ):
 
+    email = req.email.strip().lower()
+
     result = await db.execute(
-        select(User).where(User.email == req.email)
+        select(User).where(
+            User.email == email
+        )
     )
 
     user = result.scalar_one_or_none()
@@ -502,6 +617,7 @@ async def login(
         req.password,
         user.password_hash
     ):
+
         raise HTTPException(
             status_code=401,
             detail="Invalid credentials"
@@ -509,35 +625,37 @@ async def login(
 
     # Upgrade legacy hashes to Argon2.
     if not user.password_hash.startswith("$argon2"):
-        user.password_hash = hash_password(req.password)
+
+        user.password_hash = hash_password(
+            req.password
+        )
+
         await db.commit()
 
-    access_token = create_access_token(user.email)
+    access_token = create_access_token(
+        user.email
+    )
 
     return {
+
         "status": "logged_in",
+
         "access_token": access_token,
+
         "token_type": "bearer"
+
     }
 
 
-# --------------------------------------------------
-# SESSION ENDPOINTS
-# --------------------------------------------------
+# ==================================================
+# 16. SESSION ENDPOINTS
+# ==================================================
 
 @app.get("/session/list")
 async def list_sessions(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Return only the authenticated user's sessions.
-
-    Sessions are ordered by their most recent message activity,
-    newest first. Sessions without messages appear after sessions
-    that contain messages. The response includes last_activity so
-    the UI can distinguish sessions with similar titles.
-    """
 
     result = await db.execute(
         select(
@@ -551,7 +669,9 @@ async def list_sessions(
         .where(
             Session.user_email == current_user.email
         )
-        .group_by(Session.id)
+        .group_by(
+            Session.id
+        )
         .order_by(
             func.max(Message.created_at).desc().nullslast(),
             Session.id.desc()
@@ -563,14 +683,19 @@ async def list_sessions(
     response = {}
 
     for session, last_activity in session_rows:
+
         response[str(session.id)] = {
+
             "title": session.title,
+
             "persona": session.persona,
+
             "last_activity": (
                 last_activity.isoformat()
                 if last_activity is not None
                 else None
             )
+
         }
 
     return response
@@ -584,20 +709,28 @@ async def create_session(
 ):
 
     if req.persona not in agent.personas:
+
         raise HTTPException(
             status_code=400,
             detail="Invalid persona"
         )
 
     new_session = Session(
+
         id=uuid.uuid4(),
+
         user_email=current_user.email,
+
         persona=req.persona,
+
         title=req.title
+
     )
 
     db.add(new_session)
+
     await db.commit()
+
     await db.refresh(new_session)
 
     return {
@@ -619,9 +752,13 @@ async def get_session(
     )
 
     return {
+
         "id": session.id,
+
         "title": session.title,
+
         "persona": session.persona
+
     }
 
 
@@ -639,26 +776,32 @@ async def update_persona(
     )
 
     if req.persona not in agent.personas:
+
         raise HTTPException(
             status_code=400,
             detail="Invalid persona"
         )
 
     session.persona = req.persona
+
     await db.commit()
 
     user_id = session.user_email
+
     session_id = str(session.id)
 
     if (
         user_id in agent.sessions
         and session_id in agent.sessions[user_id]
     ):
+
         agent.sessions[user_id][session_id]["persona"] = (
             req.persona
         )
 
-    return {"status": "updated"}
+    return {
+        "status": "updated"
+    }
 
 
 @app.post("/session/clear")
@@ -681,28 +824,38 @@ async def clear_session(
     )
 
     session.title = "New Chat"
+
     await db.commit()
 
     user_id = session.user_email
+
     agent_session_id = str(session.id)
 
     if (
         user_id in agent.sessions
         and agent_session_id in agent.sessions[user_id]
     ):
+
         agent.sessions[user_id][agent_session_id]["messages"] = []
-        agent.sessions[user_id][agent_session_id]["title"] = "New Chat"
+
+        agent.sessions[user_id][agent_session_id]["title"] = (
+            "New Chat"
+        )
 
     return {
+
         "status": "cleared",
+
         "session_id": str(session.id),
+
         "title": "New Chat"
+
     }
 
 
-# --------------------------------------------------
-# CHAT ENDPOINTS
-# --------------------------------------------------
+# ==================================================
+# 17. CHAT ENDPOINTS
+# ==================================================
 
 @app.post("/message/send")
 async def send_message(
@@ -724,16 +877,23 @@ async def send_message(
 
     # Persist user message once.
     user_msg = Message(
+
         id=uuid.uuid4(),
+
         session_id=session.id,
+
         role="user",
+
         content=req.content
+
     )
 
     db.add(user_msg)
+
     await db.commit()
 
     try:
+
         reply = await agent.run(
             user_id,
             agent_session_id,
@@ -741,21 +901,37 @@ async def send_message(
         )
 
         if not isinstance(reply, str) or not reply.strip():
-            raise RuntimeError("Agent returned an empty response.")
+
+            raise RuntimeError(
+                "Agent returned an empty response."
+            )
 
     except Exception as exc:
-        logger.exception("Agent.run failed: %s", exc)
-        reply = "Sorry, the assistant is temporarily unavailable."
+
+        logger.exception(
+            "Agent.run failed: %s",
+            exc
+        )
+
+        reply = (
+            "Sorry, the assistant is temporarily unavailable."
+        )
 
     # Persist assistant response once.
     assistant_msg = Message(
+
         id=uuid.uuid4(),
+
         session_id=session.id,
+
         role="assistant",
+
         content=reply
+
     )
 
     db.add(assistant_msg)
+
     await db.commit()
 
     session.title = (
@@ -764,7 +940,9 @@ async def send_message(
 
     await db.commit()
 
-    return {"reply": reply}
+    return {
+        "reply": reply
+    }
 
 
 @app.get("/messages/{session_id}")
@@ -782,7 +960,9 @@ async def get_messages(
 
     result = await db.execute(
         select(Message)
-        .where(Message.session_id == session_id)
+        .where(
+            Message.session_id == session_id
+        )
         .order_by(
             Message.created_at.asc(),
             Message.id.asc()
@@ -791,44 +971,161 @@ async def get_messages(
 
     messages = result.scalars().all()
 
+    logger.info(
+        "MESSAGE HISTORY | User: %s | Session: %s | Total messages: %s",
+        current_user.email,
+        session_id,
+        len(messages)
+    )
+
     return [
+
         {
             "role": message.role,
             "content": message.content
         }
+
         for message in messages
+
     ]
 
 
 # ==================================================
-# DOCUMENT UPLOAD ENDPOINT
+# 18. DOCUMENT UPLOAD ENDPOINT
 # ==================================================
 
 @app.post("/documents/upload")
 async def upload_document(
+
+    # Uploaded document
     file: UploadFile = File(...),
+
+    # Document metadata
+    document_name: str | None = Form(default=None),
+
+    document_version: str | None = Form(default=None),
+
+    effective_date: str | None = Form(default=None),
+
+    authority: str | None = Form(default=None),
+
+    owner_department: str | None = Form(default=None),
+
+    # Authenticated user
     current_user: User = Depends(get_current_user)
+
 ):
 
+    # --------------------------------------------------
+    # 1. Validate filename
+    # --------------------------------------------------
+
     if not file.filename:
+
         raise HTTPException(
             status_code=400,
             detail="A filename is required."
         )
 
-    # Extract only the filename, not any supplied directory.
-    safe_filename = Path(file.filename).name
-    file_extension = Path(safe_filename).suffix.lower()
+    # Handle both Windows and Unix path separators.
+    safe_filename = (
+        file.filename.replace("\\", "/").split("/")[-1]
+    )
+
+    if not safe_filename or safe_filename in {".", ".."}:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid filename."
+        )
+
+    file_extension = Path(
+        safe_filename
+    ).suffix.lower()
 
     if file_extension not in ALLOWED_DOCUMENT_EXTENSIONS:
+
         raise HTTPException(
             status_code=400,
             detail="Only PDF and TXT files are supported."
         )
 
+    # --------------------------------------------------
+    # 2. Validate document metadata
+    # --------------------------------------------------
+
+    document_name = (
+        document_name.strip()
+        if document_name and document_name.strip()
+        else None
+    )
+
+    document_version = (
+        document_version.strip()
+        if document_version and document_version.strip()
+        else None
+    )
+
+    effective_date = (
+        effective_date.strip()
+        if effective_date and effective_date.strip()
+        else None
+    )
+
+    authority = (
+        authority.strip()
+        if authority and authority.strip()
+        else None
+    )
+
+    owner_department = (
+        owner_department.strip()
+        if owner_department and owner_department.strip()
+        else None
+    )
+
+    # Validate authority.
+    if (
+        authority is not None
+        and authority not in ALLOWED_DOCUMENT_AUTHORITIES
+    ):
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid authority. Allowed values: "
+                f"{sorted(ALLOWED_DOCUMENT_AUTHORITIES)}"
+            )
+        )
+
+    # Validate effective date.
+    if effective_date is not None:
+
+        try:
+
+            parsed_date = datetime.strptime(
+                effective_date,
+                "%Y-%m-%d"
+            )
+
+            if parsed_date.strftime("%Y-%m-%d") != effective_date:
+                raise ValueError
+
+        except ValueError:
+
+            raise HTTPException(
+                status_code=400,
+                detail="effective_date must use YYYY-MM-DD format."
+            )
+
+    # --------------------------------------------------
+    # 3. Prepare temporary file
+    # --------------------------------------------------
+
     temp_path = None
 
     try:
+
         total_size = 0
 
         with tempfile.NamedTemporaryFile(
@@ -840,7 +1137,10 @@ async def upload_document(
             temp_path = temp_file.name
 
             while True:
-                chunk = await file.read(1024 * 1024)
+
+                chunk = await file.read(
+                    1024 * 1024
+                )
 
                 if not chunk:
                     break
@@ -848,6 +1148,7 @@ async def upload_document(
                 total_size += len(chunk)
 
                 if total_size > MAX_UPLOAD_SIZE:
+
                     raise HTTPException(
                         status_code=413,
                         detail="File exceeds the 10 MB upload limit."
@@ -855,56 +1156,157 @@ async def upload_document(
 
                 temp_file.write(chunk)
 
+        # Reject empty files.
         if total_size == 0:
+
             raise HTTPException(
                 status_code=400,
                 detail="The uploaded file is empty."
             )
 
+        # --------------------------------------------------
+        # 4. Log upload information
+        # --------------------------------------------------
+
         logger.info(
-            "Document upload started | User: %s | File: %s | Size: %s",
+            "Document upload started | "
+            "User: %s | File: %s | Size: %s | "
+            "Name: %s | Version: %s | Effective Date: %s | "
+            "Authority: %s | Department: %s",
             current_user.email,
             safe_filename,
-            total_size
+            total_size,
+            document_name,
+            document_version,
+            effective_date,
+            authority,
+            owner_department
         )
+
+        # --------------------------------------------------
+        # 5. Ingest document with metadata
+        # --------------------------------------------------
 
         result = await asyncio.to_thread(
+
             agent._ingest_document,
+
             current_user.email,
+
             temp_path,
-            safe_filename
+
+            safe_filename,
+
+            document_name=document_name,
+
+            document_version=document_version,
+
+            effective_date=effective_date,
+
+            authority=authority,
+
+            owner_department=owner_department
+
         )
 
-        if (
-            not isinstance(result, str)
-            or not result.strip()
-            or result.startswith("Document ingestion failed.")
-        ):
+        # --------------------------------------------------
+        # 6. Validate ingestion result
+        # --------------------------------------------------
+
+        if not isinstance(result, str) or not result.strip():
+
+            logger.error(
+                "Document ingestion returned an invalid result | "
+                "User: %s | File: %s | Result: %s",
+                current_user.email,
+                safe_filename,
+                result
+            )
+
             raise HTTPException(
-                status_code=500,
+                status_code=422,
                 detail=(
                     "Document ingestion failed. "
-                    "Please check the document and try again."
+                    "Please verify that the document contains readable text."
                 )
             )
 
+        successful_messages = (
+            "Document uploaded and indexed successfully:",
+            "Document already exists with identical content",
+            "Document metadata updated successfully."
+        )
+
+        if not result.startswith(successful_messages):
+
+            logger.error(
+                "Document ingestion unsuccessful | "
+                "User: %s | File: %s | Result: %s",
+                current_user.email,
+                safe_filename,
+                result
+            )
+
+            raise HTTPException(
+                status_code=422,
+                detail=result
+            )
+
+        # --------------------------------------------------
+        # 7. Log successful upload
+        # --------------------------------------------------
+
         logger.info(
-            "Document upload completed | User: %s | File: %s",
+            "Document upload completed | "
+            "User: %s | File: %s",
             current_user.email,
             safe_filename
         )
 
+        # --------------------------------------------------
+        # 8. Return upload result
+        # --------------------------------------------------
+
         return {
+
             "status": "success",
+
             "filename": safe_filename,
+
             "size": total_size,
+
+            "metadata": {
+
+                "document_name": document_name or safe_filename,
+
+                "document_version": document_version,
+
+                "effective_date": effective_date,
+
+                "authority": authority,
+
+                "upload_date": datetime.now(
+                    timezone.utc
+                ).isoformat(),
+
+                "owner_department": owner_department
+
+            },
+
             "message": result
+
         }
 
+    # --------------------------------------------------
+    # 9. Error handling
+    # --------------------------------------------------
+
     except HTTPException:
+
         raise
 
     except Exception:
+
         logger.exception(
             "Document upload failed for user %s",
             current_user.email
@@ -915,16 +1317,72 @@ async def upload_document(
             detail="Document upload failed."
         )
 
+    # --------------------------------------------------
+    # 10. Cleanup
+    # --------------------------------------------------
+
     finally:
+
         if temp_path and os.path.exists(temp_path):
-            os.remove(temp_path)
+
+            try:
+
+                os.remove(temp_path)
+
+            except OSError:
+
+                logger.exception(
+                    "Failed to remove temporary upload file."
+                )
 
         await file.close()
 
 
-# --------------------------------------------------
-# DIRECT LLM TEST ENDPOINT
-# --------------------------------------------------
+# ==================================================
+# 19. DOCUMENT LIST ENDPOINT
+# ==================================================
+
+@app.get("/documents/list")
+async def list_documents(
+    current_user: User = Depends(get_current_user)
+):
+
+    try:
+
+        documents = await asyncio.to_thread(
+
+            agent.docs.list_documents,
+
+            user_id=current_user.email
+
+        )
+
+        return {
+
+            "status": "success",
+
+            "count": len(documents),
+
+            "documents": documents
+
+        }
+
+    except Exception:
+
+        logger.exception(
+            "Failed to list documents for user %s",
+            current_user.email
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to retrieve documents."
+        )
+
+
+# ==================================================
+# 20. DIRECT LLM TEST ENDPOINT
+# ==================================================
 
 @app.post("/test-llm")
 async def test_llm(
@@ -933,28 +1391,42 @@ async def test_llm(
 ):
 
     try:
-        response = await llm.invoke(req.prompt)
+
+        response = await llm.invoke(
+            req.prompt
+        )
 
         return {
+
             "prompt": req.prompt,
+
             "response": response,
+
             "model": llm.model_name
+
         }
 
-    except Exception as exc:
-        logger.exception("Direct LLM test failed")
+    except Exception:
+
+        logger.exception(
+            "Direct LLM test failed"
+        )
 
         raise HTTPException(
             status_code=500,
-            detail=str(exc)
+            detail="LLM request failed. Please try again."
         )
 
 
 # ==================================================
-# SERVER-SENT EVENTS HELPERS
+# 21. SERVER-SENT EVENTS HELPERS
 # ==================================================
 
-def format_sse_event(event: str, data: dict) -> str:
+def format_sse_event(
+    event: str,
+    data: dict
+) -> str:
+
     """
     Format a Server-Sent Event.
     """
@@ -971,7 +1443,7 @@ def format_sse_event(event: str, data: dict) -> str:
 
 
 # ==================================================
-# STREAMING ENDPOINT
+# 22. STREAMING ENDPOINT
 # ==================================================
 
 @app.post("/stream")
@@ -981,7 +1453,10 @@ async def stream_message(
     db: AsyncSession = Depends(get_db)
 ):
 
-    # Verify session ownership.
+    # --------------------------------------------------
+    # 1. Verify session ownership
+    # --------------------------------------------------
+
     session = await find_owned_session(
         req.session_id,
         current_user,
@@ -994,18 +1469,26 @@ async def stream_message(
     )
 
     # Save stable identifiers before entering generator.
-    # The generator uses a separate database session.
     database_session_id = session.id
 
-    # Save user message.
+    # --------------------------------------------------
+    # 2. Save user message
+    # --------------------------------------------------
+
     user_msg = Message(
+
         id=uuid.uuid4(),
+
         session_id=database_session_id,
+
         role="user",
+
         content=req.content
+
     )
 
     db.add(user_msg)
+
     await db.commit()
 
     logger.info(
@@ -1014,20 +1497,36 @@ async def stream_message(
         agent_session_id
     )
 
+    # --------------------------------------------------
+    # 3. SSE event generator
+    # --------------------------------------------------
+
     async def event_generator():
+
         full_reply = ""
+
         completed = False
 
+        failed = False
+
         try:
+
             async for event in agent.stream_events(
                 user_id,
                 agent_session_id,
                 req.content
             ):
+
                 event_type = event.get("event")
+
                 event_data = event.get("data", {})
 
+                # ------------------------------------------
+                # Status event
+                # ------------------------------------------
+
                 if event_type == "status":
+
                     logger.info(
                         "Agent status: %s",
                         event_data.get("message", "")
@@ -1038,18 +1537,36 @@ async def stream_message(
                         event_data
                     )
 
+                # ------------------------------------------
+                # Token event
+                # ------------------------------------------
+
                 elif event_type == "token":
-                    content = event_data.get("content", "")
+
+                    content = event_data.get(
+                        "content",
+                        ""
+                    )
 
                     if content:
+
                         full_reply += content
 
                         yield format_sse_event(
                             "token",
-                            {"content": content}
+                            {
+                                "content": content
+                            }
                         )
 
+                # ------------------------------------------
+                # Error event
+                # ------------------------------------------
+
                 elif event_type == "error":
+
+                    failed = True
+
                     logger.error(
                         "Agent streaming error: %s",
                         event_data.get("message", "")
@@ -1060,11 +1577,33 @@ async def stream_message(
                         event_data
                     )
 
+                # ------------------------------------------
+                # Completion event
+                # ------------------------------------------
+
                 elif event_type == "done":
+
                     completed = True
-                    logger.info("Agent reported streaming completion.")
+
+                    logger.info(
+                        "Agent reported streaming completion."
+                    )
+
+            # --------------------------------------------------
+            # 4. Validate streaming result
+            # --------------------------------------------------
+
+            if failed:
+
+                logger.error(
+                    "Agent streaming failed. "
+                    "Assistant response will not be saved."
+                )
+
+                return
 
             if not completed:
+
                 logger.error(
                     "Agent stream ended without a done event."
                 )
@@ -1078,48 +1617,69 @@ async def stream_message(
                         )
                     }
                 )
+
                 return
 
             if not full_reply.strip():
+
                 full_reply = (
                     "Sorry, the assistant is temporarily unavailable."
                 )
 
-            # Use an independent database session.
+            # --------------------------------------------------
+            # 5. Persist assistant response
+            # --------------------------------------------------
+
             async with async_session() as stream_db:
+
                 stream_session = await stream_db.get(
                     Session,
                     database_session_id
                 )
 
                 if stream_session is None:
+
                     logger.error(
                         "Could not find session while saving streamed response."
                     )
 
                     yield format_sse_event(
                         "error",
-                        {"message": "Could not save the conversation."}
+                        {
+                            "message": "Could not save the conversation."
+                        }
                     )
+
                     return
 
-                # Verify ownership again before persistence.
+                # Verify ownership again.
                 if stream_session.user_email != user_id:
+
                     logger.error(
                         "Session ownership changed during streaming."
                     )
 
                     yield format_sse_event(
                         "error",
-                        {"message": "Session ownership validation failed."}
+                        {
+                            "message": (
+                                "Session ownership validation failed."
+                            )
+                        }
                     )
+
                     return
 
                 assistant_msg = Message(
+
                     id=uuid.uuid4(),
+
                     session_id=database_session_id,
+
                     role="assistant",
+
                     content=full_reply
+
                 )
 
                 stream_db.add(assistant_msg)
@@ -1128,6 +1688,7 @@ async def stream_message(
                     user_id in agent.sessions
                     and agent_session_id in agent.sessions[user_id]
                 ):
+
                     stream_session.title = (
                         agent.sessions[user_id][agent_session_id]["title"]
                     )
@@ -1139,13 +1700,22 @@ async def stream_message(
                     agent_session_id
                 )
 
+            # --------------------------------------------------
+            # 6. Send final completion event
+            # --------------------------------------------------
+
             yield format_sse_event(
                 "done",
-                {"message": "Response saved successfully."}
+                {
+                    "message": "Response saved successfully."
+                }
             )
 
-        except Exception as exc:
-            logger.exception("SSE streaming failed: %s", exc)
+        except Exception:
+
+            logger.exception(
+                "SSE streaming failed."
+            )
 
             yield format_sse_event(
                 "error",
@@ -1156,12 +1726,24 @@ async def stream_message(
                 }
             )
 
+    # --------------------------------------------------
+    # 7. Return streaming response
+    # --------------------------------------------------
+
     return StreamingResponse(
+
         event_generator(),
+
         media_type="text/event-stream",
+
         headers={
+
             "Cache-Control": "no-cache",
+
             "Connection": "keep-alive",
+
             "X-Accel-Buffering": "no"
+
         }
+
     )

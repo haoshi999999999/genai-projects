@@ -4,6 +4,7 @@ import traceback
 import inspect
 import json
 import re
+import asyncio
 
 from pathlib import Path
 
@@ -206,8 +207,6 @@ class Agent:
             "concise": "You respond with minimal words, focusing only on essential points."
         }
 
-        self.last_response = ""
-
         # Maximum number of consecutive tool-selection rounds.
         self.max_tool_iterations = 3
 
@@ -280,21 +279,10 @@ class Agent:
     def _parse_ingestion_command(self, message):
         """
         Recognize explicit document ingestion commands.
-
-        Supported examples:
-
-            ingest
-            ingest C:\\documents\\handbook.pdf
-            ingest: C:\\documents\\handbook.pdf
-            ingest "C:\\My Documents\\handbook.pdf"
-
-        Natural-language messages containing the word
-        'ingest' are not treated as file paths.
         """
 
         message = message.strip()
 
-        # Bare ingestion command.
         if re.fullmatch(
             r"ingest\s*:?",
             message,
@@ -302,7 +290,6 @@ class Agent:
         ):
             return ""
 
-        # Must start with the explicit ingestion command.
         match = re.match(
             r"^\s*ingest\s*:?\s+(.+?)\s*$",
             message,
@@ -314,7 +301,6 @@ class Agent:
 
         file_path = match.group(1).strip()
 
-        # Remove surrounding quotation marks.
         if (
             len(file_path) >= 2
             and file_path[0] == file_path[-1]
@@ -322,7 +308,6 @@ class Agent:
         ):
             file_path = file_path[1:-1].strip()
 
-        # Only accept supported document extensions.
         if Path(file_path).suffix.lower() not in (".pdf", ".txt"):
             return None
 
@@ -332,13 +317,16 @@ class Agent:
         self,
         user_id,
         file_path,
-        source_name=None
+        source_name=None,
+        document_name=None,
+        document_version=None,
+        effective_date=None,
+        authority=None,
+        owner_department=None
     ):
         """
         Ingest a private PDF or TXT document
         for the authenticated user.
-
-        source_name preserves the original uploaded filename.
         """
 
         if not file_path:
@@ -374,7 +362,6 @@ class Agent:
                     "Only PDF and TXT documents are supported."
                 )
 
-            # Preserve the original filename during ingestion.
             if source_name:
                 source_name = Path(source_name).name
             else:
@@ -384,16 +371,88 @@ class Agent:
                 file_path=str(path),
                 user_id=user_id,
                 is_shared=False,
-                source_name=source_name
+                source_name=source_name,
+                document_name=document_name,
+                document_version=document_version,
+                effective_date=effective_date,
+                authority=authority,
+                owner_department=owner_department
             )
+
+            # ------------------------------------------
+            # VALIDATE INGESTION RESULT
+            # ------------------------------------------
+
+            if not isinstance(result, dict):
+
+                logger.error(
+                    "Unexpected document ingestion result type | "
+                    "User: %s | File: %s | Result: %s",
+                    user_id,
+                    source_name,
+                    result
+                )
+
+                return (
+                    "Document ingestion returned an unexpected result. "
+                    "Please check the application logs."
+                )
+
+            status = result.get("status")
 
             logger.info(
-                "Document ingestion successful for user %s: %s",
+                "Document ingestion result | "
+                "User: %s | File: %s | Status: %s",
                 user_id,
-                source_name
+                source_name,
+                status
             )
 
-            return str(result)
+            # ------------------------------------------
+            # HANDLE SUCCESSFUL INGESTION
+            # ------------------------------------------
+
+            if status == "ingested":
+
+                return (
+                    f"Document uploaded and indexed successfully: "
+                    f"{source_name}"
+                )
+
+            elif status == "skipped":
+
+                return (
+                    "Document already exists with identical content "
+                    "and metadata. No changes were needed: "
+                    f"{source_name}"
+                )
+
+            elif status == "metadata_updated":
+
+                return (
+                    "Document metadata updated successfully. "
+                    "No duplicate chunks were created: "
+                    f"{source_name}"
+                )
+
+            # ------------------------------------------
+            # HANDLE UNEXPECTED STATUS
+            # ------------------------------------------
+
+            else:
+
+                logger.error(
+                    "Unexpected document ingestion status | "
+                    "User: %s | File: %s | Result: %s",
+                    user_id,
+                    source_name,
+                    result
+                )
+
+                return (
+                    "Document ingestion returned an unexpected status: "
+                    f"{source_name}"
+                )
 
         except Exception:
 
@@ -406,6 +465,7 @@ class Agent:
                 "Document ingestion failed. "
                 "Please check the document and try again."
             )
+
     # ==================================================
     # DOCUMENT RETRIEVAL
     # ==================================================
@@ -459,6 +519,79 @@ class Agent:
             logger.exception("Document retrieval failed")
 
             return "Document retrieval failed."
+
+    # ==================================================
+    # DOCUMENT QUERY DETECTION
+    # ==================================================
+
+    def _should_retrieve_documents(self, user_message):
+        """
+        Identify questions that are likely to require
+        information from uploaded company documents.
+        """
+
+        text = user_message.lower()
+
+        explicit_terms = [
+            "uploaded document",
+            "uploaded file",
+            "uploaded documents",
+            "employee handbook",
+            "company handbook",
+            "company policy",
+            "company policies",
+            "vacation policy",
+            "leave policy",
+            "hr policy",
+            "according to the document",
+            "according to the handbook",
+            "according to the policy"
+        ]
+
+        if any(term in text for term in explicit_terms):
+            return True
+
+        policy_topics = [
+            "vacation",
+            "pto",
+            "paid time off",
+            "annual leave",
+            "sick leave",
+            "holiday allowance",
+            "employee benefits",
+            "carry over",
+            "carryover",
+            "unused leave",
+            "unused vacation"
+        ]
+
+        policy_actions = [
+            "days",
+            "allowance",
+            "request",
+            "requests",
+            "approval",
+            "approve",
+            "approved",
+            "submit",
+            "submission",
+            "balance",
+            "policy",
+            "annually",
+            "annual",
+            "employees",
+            "employee"
+        ]
+
+        has_policy_topic = any(
+            term in text for term in policy_topics
+        )
+
+        has_policy_context = any(
+            term in text for term in policy_actions
+        )
+
+        return has_policy_topic and has_policy_context
 
     # ==================================================
     # SESSION MANAGEMENT
@@ -586,8 +719,8 @@ Instructions:
     the corresponding tool was actually executed.
 11. Avoid repeating searches that have already returned sufficient
     information.
-12. After receiving useful tool results, provide an answer instead
-    of unnecessarily requesting more tool calls.
+12. After receiving useful tool results, provide an answer
+    instead of unnecessarily requesting more tool calls.
 
 DOCUMENT GROUNDING AND CONFLICT DETECTION RULES:
 
@@ -603,11 +736,6 @@ DOCUMENT GROUNDING AND CONFLICT DETECTION RULES:
     - Do not silently select one value over another.
 
 15. Never invent explanations to reconcile conflicting information.
-
-    For example, if one document states that employees receive
-    10 paid holidays and another states that the company observes
-    6 paid holidays, do not assume these represent different
-    categories unless the documents explicitly establish that.
 
 16. If documents contain effective dates, version numbers, or
     approval information, consider these when evaluating which
@@ -746,6 +874,53 @@ Known facts:
 
         executed_tools = []
 
+        # ------------------------------------------
+        # AUTOMATIC DOCUMENT RETRIEVAL
+        # ------------------------------------------
+
+        request_tool_schemas = TOOL_SCHEMAS
+
+        if self._should_retrieve_documents(user_message):
+
+            emit_status(
+                "Identifying relevant company documents..."
+            )
+
+            emit_status(
+                "Searching uploaded documents..."
+            )
+
+            document_result = await asyncio.to_thread(
+                self.retrieve_documents,
+                user_id,
+                user_message,
+                5
+            )
+
+            executed_tools.append({
+                "name": "retrieve_documents",
+                "result": document_result
+            })
+
+            llm_messages.append({
+                "role": "system",
+                "content": (
+                    "DOCUMENT RETRIEVAL RESULTS:\n\n"
+                    f"{document_result}\n\n"
+                    "Use these retrieved documents as evidence "
+                    "when answering the user's question. "
+                    "Do not invent information that is not "
+                    "supported by the retrieved content."
+                )
+            })
+
+            # Prevent duplicate retrieval.
+            request_tool_schemas = [
+                schema
+                for schema in TOOL_SCHEMAS
+                if schema["function"]["name"] != "retrieve_documents"
+            ]
+
         emit_status("Analyzing your request...")
 
         for iteration in range(self.max_tool_iterations):
@@ -758,7 +933,7 @@ Known facts:
             response = await self.llm.chat.completions.create(
                 model=self.llm.model_name,
                 messages=llm_messages,
-                tools=TOOL_SCHEMAS,
+                tools=request_tool_schemas,
                 tool_choice="auto",
                 parallel_tool_calls=False,
                 temperature=0
@@ -955,7 +1130,8 @@ Known facts:
                         "Loading and indexing your document..."
                     )
 
-                full_reply = self._ingest_document(
+                full_reply = await asyncio.to_thread(
+                    self._ingest_document,
                     user_id,
                     file_path
                 )
@@ -971,8 +1147,6 @@ Known facts:
                     user_id,
                     f"Assistant: {full_reply}"
                 )
-
-                self.last_response = full_reply
 
                 yield self._emit_event(
                     "token",
@@ -1014,8 +1188,6 @@ Known facts:
                     user_id,
                     f"Assistant: {full_reply}"
                 )
-
-                self.last_response = full_reply
 
                 yield self._emit_event(
                     "token",
@@ -1061,6 +1233,57 @@ Known facts:
 
             direct_response = None
 
+            # ------------------------------------------
+            # AUTOMATIC DOCUMENT RETRIEVAL
+            # ------------------------------------------
+
+            request_tool_schemas = TOOL_SCHEMAS
+
+            if self._should_retrieve_documents(user_message):
+
+                yield emit_status(
+                    "Identifying relevant company documents..."
+                )
+
+                yield emit_status(
+                    "Searching uploaded documents..."
+                )
+
+                document_result = await asyncio.to_thread(
+                    self.retrieve_documents,
+                    user_id,
+                    user_message,
+                    5
+                )
+
+                executed_tools.append({
+                    "name": "retrieve_documents",
+                    "result": document_result
+                })
+
+                llm_messages.append({
+                    "role": "system",
+                    "content": (
+                        "DOCUMENT RETRIEVAL RESULTS:\n\n"
+                        f"{document_result}\n\n"
+                        "Use these retrieved documents as evidence "
+                        "when answering the user's question. "
+                        "Do not invent information that is not "
+                        "supported by the retrieved content."
+                    )
+                })
+
+                # Prevent the LLM from retrieving the same documents again.
+                request_tool_schemas = [
+                    schema
+                    for schema in TOOL_SCHEMAS
+                    if schema["function"]["name"] != "retrieve_documents"
+                ]
+
+            # ------------------------------------------
+            # TOOL SELECTION LOOP
+            # ------------------------------------------
+
             for iteration in range(self.max_tool_iterations):
 
                 if iteration == 0:
@@ -1078,7 +1301,7 @@ Known facts:
                 response = await self.llm.chat.completions.create(
                     model=self.llm.model_name,
                     messages=llm_messages,
-                    tools=TOOL_SCHEMAS,
+                    tools=request_tool_schemas,
                     tool_choice="auto",
                     parallel_tool_calls=False,
                     temperature=0
@@ -1138,7 +1361,6 @@ Known facts:
 
             else:
 
-                # Maximum tool rounds reached.
                 direct_response = None
 
             # ------------------------------------------
@@ -1164,9 +1386,6 @@ Known facts:
                     "Preparing the final response..."
                 )
 
-                # Build the final synthesis request.
-                # IMPORTANT:
-                # Do not include tools or tool_choice.
                 final_messages = [
                     {
                         "role": "system",
@@ -1206,8 +1425,6 @@ Known facts:
                     "Generating your response..."
                 )
 
-                # No tools parameter.
-                # No tool_choice parameter.
                 response_stream = (
                     await self.llm.chat.completions.create(
                         model=self.llm.model_name,
@@ -1302,8 +1519,6 @@ Known facts:
                 f"Assistant: {full_reply}"
             )
 
-            self.last_response = full_reply
-
             logger.info(
                 "Structured streaming completed successfully."
             )
@@ -1325,28 +1540,6 @@ Known facts:
             fallback = (
                 "Sorry, the assistant is temporarily unavailable."
             )
-
-            try:
-
-                self.add_to_session(
-                    user_id,
-                    session_id,
-                    "assistant",
-                    fallback
-                )
-
-                self.memory.add_short_term(
-                    user_id,
-                    f"Assistant: {fallback}"
-                )
-
-                self.last_response = fallback
-
-            except Exception:
-
-                logger.exception(
-                    "Failed to save streaming fallback response."
-                )
 
             yield self._emit_event(
                 "error",
@@ -1424,12 +1617,60 @@ Known facts:
 
         executed_tools = []
 
+        # ------------------------------------------
+        # AUTOMATIC DOCUMENT RETRIEVAL
+        # ------------------------------------------
+
+        request_tool_schemas = TOOL_SCHEMAS
+
+        if self._should_retrieve_documents(user_message):
+
+            logger.info(
+                "Automatically retrieving documents for user %s",
+                user_id
+            )
+
+            document_result = await asyncio.to_thread(
+                self.retrieve_documents,
+                user_id,
+                user_message,
+                5
+            )
+
+            executed_tools.append({
+                "name": "retrieve_documents",
+                "result": document_result
+            })
+
+            llm_messages.append({
+                "role": "system",
+                "content": (
+                    "DOCUMENT RETRIEVAL RESULTS:\n\n"
+                    f"{document_result}\n\n"
+                    "Use these retrieved documents as evidence "
+                    "when answering the user's question. "
+                    "Do not invent information that is not "
+                    "supported by the retrieved content."
+                )
+            })
+
+            # Prevent duplicate retrieval.
+            request_tool_schemas = [
+                schema
+                for schema in TOOL_SCHEMAS
+                if schema["function"]["name"] != "retrieve_documents"
+            ]
+
+        # ------------------------------------------
+        # TOOL SELECTION LOOP
+        # ------------------------------------------
+
         for iteration in range(self.max_tool_iterations):
 
             response = await self.llm.chat.completions.create(
                 model=self.llm.model_name,
                 messages=llm_messages,
-                tools=TOOL_SCHEMAS,
+                tools=request_tool_schemas,
                 tool_choice="auto",
                 parallel_tool_calls=False,
                 temperature=0
@@ -1476,7 +1717,10 @@ Known facts:
                     "content": tool_result
                 })
 
-        # Maximum tool iterations reached.
+        # ------------------------------------------
+        # MAXIMUM TOOL ITERATIONS REACHED
+        # ------------------------------------------
+
         logger.warning(
             "Maximum tool iterations reached."
         )
@@ -1503,12 +1747,12 @@ Known facts:
                 "role": "system",
                 "content": (
                     "Use these tool results to answer the user. "
-                    "Do not request additional tools.\n\n"
+                    "Do not request additional tools. "
+                    "Do not invent information beyond the results.\n\n"
                     f"{tool_summary}"
                 )
             })
 
-        # Final response without tools or tool_choice.
         response = await self.llm.chat.completions.create(
             model=self.llm.model_name,
             messages=final_messages,
@@ -1566,7 +1810,8 @@ Known facts:
                     "DOCUMENT INGESTION COMMAND DETECTED"
                 )
 
-                assistant_reply = self._ingest_document(
+                assistant_reply = await asyncio.to_thread(
+                    self._ingest_document,
                     user_id,
                     file_path
                 )
@@ -1582,8 +1827,6 @@ Known facts:
                     user_id,
                     f"Assistant: {assistant_reply}"
                 )
-
-                self.last_response = assistant_reply
 
                 return assistant_reply
 
@@ -1609,8 +1852,6 @@ Known facts:
                     user_id,
                     f"Assistant: {fact_reply}"
                 )
-
-                self.last_response = fact_reply
 
                 return fact_reply
 
@@ -1653,8 +1894,6 @@ Known facts:
                 f"Assistant: {assistant_reply}"
             )
 
-            self.last_response = assistant_reply
-
             return assistant_reply
 
         except Exception as exc:
@@ -1667,22 +1906,5 @@ Known facts:
             fallback = (
                 "Sorry, the assistant is temporarily unavailable."
             )
-
-            try:
-
-                self.add_to_session(
-                    user_id,
-                    session_id,
-                    "assistant",
-                    fallback
-                )
-
-                self.last_response = fallback
-
-            except Exception:
-
-                logger.exception(
-                    "Failed to save fallback response."
-                )
 
             return fallback

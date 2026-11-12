@@ -1,42 +1,100 @@
+# ==========================================
 # Python virtual environments
+# ==========================================
 venv/
 .venv/
 **/venv/
 **/.venv/
 
-# Python cache
+# ==========================================
+# Python cache and compiled files
+# ==========================================
 __pycache__/
 *.py[cod]
+.pytest_cache/
 
+# ==========================================
 # Environment variables and secrets
+# ==========================================
 .env
 .env.*
 !.env.example
+**/.env
 
-# Local user data
+# ==========================================
+# Local user data and memory
+# ==========================================
 memory.json
 **/memory.json
 
-# FAISS local storage
+# ==========================================
+# FAISS indexes and vector databases
+# ==========================================
 semantic_store/
 vector_store/
 faiss_index/
 
+**/document_store/
+**/document_store_backup*/
+**/semantic_store/
+**/semantic_store_backup*/
+
+# ==========================================
+# Local test data and user credentials
+# ==========================================
+test_documents/
+Demo Users.txt
+generate_passwords.py
+
+# ==========================================
 # IDE settings
+# ==========================================
 .vscode/
 .idea/
+**/.vscode/
+**/.idea/
 
+# ==========================================
 # Logs
+# ==========================================
 *.log
 
-# Test cache
-.pytest_cache/
-
+# ==========================================
 # Local databases
+# ==========================================
 *.db
 *.sqlite
 *.sqlite3
 
+# ==========================================
 # Database backups
+# ==========================================
 *.bak
 *.dump
+
+# ==========================================
+# Demo recordings and video files
+# ==========================================
+*.mp4
+*.mov
+*.avi
+*.mkv
+
+# ==========================================
+# Operating system files
+# ==========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# Temporary files and backups
+# ==========================================
+*.tmp
+*.temp
+*.orig
+*.swp
+
+# Demo video captions
+*.srt
+*~
