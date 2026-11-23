@@ -1,6 +1,6 @@
 .chat-container {
   display: flex;
-  min-height: 100vh;
+  min-height: calc(100vh - 54px);
   background: #f3f4f6;
 }
 
@@ -356,4 +356,64 @@
     opacity: 1;
   }
 
+}
+
+/* =========================================
+   Global Dark Theme - Chat Page
+   ========================================= */
+
+:root[data-theme='dark'] .chat-container {
+  background: #111827;
+  color: #f9fafb;
+}
+
+:root[data-theme='dark'] .chat-main {
+  background: #111827;
+  color: #f9fafb;
+}
+
+:root[data-theme='dark'] .chat-header {
+  border-bottom-color: #374151;
+  color: #f9fafb;
+}
+
+:root[data-theme='dark'] .chat-welcome h1,
+:root[data-theme='dark'] .chat-welcome h2 {
+  color: #f9fafb;
+}
+
+:root[data-theme='dark'] .chat-welcome p {
+  color: #9ca3af;
+}
+
+/* User messages */
+:root[data-theme='dark'] .message-item.user {
+  background: #1e3a8a;
+  color: #dbeafe;
+}
+
+/* Assistant messages */
+:root[data-theme='dark'] .message-item.assistant {
+  background: #1f2937;
+  color: #f9fafb;
+}
+
+/* Chat input */
+:root[data-theme='dark'] .chat-input-container input {
+  background: #1f2937;
+  color: #f9fafb;
+  border-color: #4b5563;
+}
+
+:root[data-theme='dark'] .chat-input-container input::placeholder {
+  color: #9ca3af;
+}
+
+/* Chat history */
+:root[data-theme='dark'] .history-item-container.active {
+  background: #1e3a8a;
+}
+
+:root[data-theme='dark'] .history-item-container.active .history-item {
+  color: #dbeafe;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import PageNavigation from '../components/PageNavigation'
 
 import {
   getSessions,
@@ -306,8 +306,6 @@ function getTitleCacheKey(
 // ==========================================
 
 function ChatPage() {
-  const navigate = useNavigate()
-
 
   // ==========================================
   // Language
@@ -684,17 +682,6 @@ function ChatPage() {
 
 
   // ==========================================
-  // Logout
-  // ==========================================
-
-  const handleLogout = () => {
-    sessionStorage.removeItem('access_token')
-
-    navigate('/', { replace: true })
-  }
-
-
-  // ==========================================
   // Visible Conversation List
   // ==========================================
 
@@ -731,238 +718,235 @@ function ChatPage() {
   // ==========================================
 
   return (
-    <div className="chat-container">
+    <>
+      {/* Shared navigation */}
+      <PageNavigation logoutLabel={t.logout} />
 
-      {/* Sidebar */}
-      <aside className="chat-sidebar">
+      {/* Chat interface */}
+      <div className="chat-container">
 
-        <div className="sidebar-header">
-          <h2>{t.title}</h2>
-        </div>
+        {/* Sidebar */}
+        <aside className="chat-sidebar">
 
-
-        {/* New Chat */}
-        <button
-          className="new-chat-button"
-          onClick={handleNewChat}
-          disabled={isCreatingChat}
-        >
-          {isCreatingChat ? t.creating : t.newChat}
-        </button>
+          <div className="sidebar-header">
+            <h2>{t.title}</h2>
+          </div>
 
 
-        {/* Conversation History */}
-        <div className="chat-history">
+          {/* New Chat */}
+          <button
+            className="new-chat-button"
+            onClick={handleNewChat}
+            disabled={isCreatingChat}
+          >
+            {isCreatingChat ? t.creating : t.newChat}
+          </button>
 
-          <h3>{t.recentConversations}</h3>
 
-          {isLoading && (
-            <p>{t.loadingConversations}</p>
-          )}
+          {/* Conversation History */}
+          <div className="chat-history">
 
-          {errorMessage && (
-            <p className="error-message">
-              {errorMessage}
-            </p>
-          )}
+            <h3>{t.recentConversations}</h3>
 
-          {!isLoading &&
-            visibleSessions.map(([sessionId, session]) => {
+            {isLoading && (
+              <p>{t.loadingConversations}</p>
+            )}
 
-              const displayTitle = getDisplayTitle(
-                sessionId,
-                session.title
-              )
-
-              return (
-                <div
-                  key={sessionId}
-                  className={`history-item-container ${
-                    activeSessionId === sessionId ? 'active' : ''
-                  }`}
-                >
-
-                  <button
-                    type="button"
-                    className="history-item"
-                    onClick={() => handleSelectSession(sessionId)}
-                    disabled={isSending}
-                    title={displayTitle}
-                  >
-                    {displayTitle}
-                  </button>
-
-                  <button
-                    type="button"
-                    className="close-session-button"
-                    onClick={() => handleCloseSession(sessionId)}
-                    disabled={isSending}
-                    aria-label={`${t.closeConversation}: ${displayTitle}`}
-                    title={t.closeConversation}
-                  >
-                    ×
-                  </button>
-
-                </div>
-              )
-            })
-          }
-
-          {!isLoading &&
-            visibleSessions.length === 0 && (
-              <p className="empty-history">
-                {t.noConversations}
+            {errorMessage && (
+              <p className="error-message">
+                {errorMessage}
               </p>
             )}
 
-        </div>
+            {!isLoading &&
+              visibleSessions.map(([sessionId, session]) => {
 
+                const displayTitle = getDisplayTitle(
+                  sessionId,
+                  session.title
+                )
 
-        {/* Logout */}
-        <button
-          className="logout-button"
-          onClick={handleLogout}
-        >
-          {t.logout}
-        </button>
+                return (
+                  <div
+                    key={sessionId}
+                    className={`history-item-container ${
+                      activeSessionId === sessionId ? 'active' : ''
+                    }`}
+                  >
 
-      </aside>
+                    <button
+                      type="button"
+                      className="history-item"
+                      onClick={() => handleSelectSession(sessionId)}
+                      disabled={isSending}
+                      title={displayTitle}
+                    >
+                      {displayTitle}
+                    </button>
 
+                    <button
+                      type="button"
+                      className="close-session-button"
+                      onClick={() => handleCloseSession(sessionId)}
+                      disabled={isSending}
+                      aria-label={`${t.closeConversation}: ${displayTitle}`}
+                      title={t.closeConversation}
+                    >
+                      ×
+                    </button>
 
-      {/* Main Chat Area */}
-      <main className="chat-main">
+                  </div>
+                )
+              })
+            }
 
-        <header className="chat-header">
-          <h2>{t.title}</h2>
-        </header>
+            {!isLoading &&
+              visibleSessions.length === 0 && (
+                <p className="empty-history">
+                  {t.noConversations}
+                </p>
+              )}
 
-
-        {/* Welcome Screen */}
-        {!activeSessionId && (
-
-          <section className="chat-welcome">
-
-            <h1>{t.welcome}</h1>
-
-            <p>{t.welcomeDescription}</p>
-
-          </section>
-
-        )}
-
-
-        {/* Conversation Messages */}
-        {activeSessionId && (
-
-          <section className="message-list">
-
-            {isLoadingMessages && (
-              <p>{t.loadingMessages}</p>
-            )}
-
-
-            {!isLoadingMessages && messages.length === 0 && (
-
-              <div className="chat-welcome">
-
-                <h1>{t.newConversation}</h1>
-
-                <p>{t.newConversationDescription}</p>
-
-              </div>
-
-            )}
-
-
-            {!isLoadingMessages && messages.map((message, index) => (
-
-              <div
-                key={index}
-                className={`message-item ${message.role}`}
-              >
-
-                <div className="message-role">
-                  {message.role === 'user' ? t.you : t.assistant}
-                </div>
-
-                <div className="message-content">
-                  {message.content}
-                </div>
-
-              </div>
-
-            ))}
-
-
-            {/* AI Thinking Status */}
-            {isSending && (
-
-              <div className="message-item assistant">
-
-                <div className="message-role">
-                  {t.assistant}
-                </div>
-
-                <div className="message-content">
-                  {t.thinking}
-                </div>
-
-              </div>
-
-            )}
-
-          </section>
-
-        )}
-
-
-        {/* Error Message */}
-        {errorMessage && activeSessionId && (
-
-          <div className="chat-error">
-            {errorMessage}
           </div>
 
-        )}
+        </aside>
 
 
-        {/* Message Input */}
-        <div className="chat-input-container">
+        {/* Main Chat Area */}
+        <main className="chat-main">
 
-          <input
-            type="text"
-            placeholder={t.askAnything}
-            value={inputMessage}
-            onChange={(event) => setInputMessage(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                handleSendMessage()
+          <header className="chat-header">
+            <h2>{t.title}</h2>
+          </header>
+
+
+          {/* Welcome Screen */}
+          {!activeSessionId && (
+
+            <section className="chat-welcome">
+
+              <h1>{t.welcome}</h1>
+
+              <p>{t.welcomeDescription}</p>
+
+            </section>
+
+          )}
+
+
+          {/* Conversation Messages */}
+          {activeSessionId && (
+
+            <section className="message-list">
+
+              {isLoadingMessages && (
+                <p>{t.loadingMessages}</p>
+              )}
+
+
+              {!isLoadingMessages && messages.length === 0 && (
+
+                <div className="chat-welcome">
+
+                  <h1>{t.newConversation}</h1>
+
+                  <p>{t.newConversationDescription}</p>
+
+                </div>
+
+              )}
+
+
+              {!isLoadingMessages && messages.map((message, index) => (
+
+                <div
+                  key={index}
+                  className={`message-item ${message.role}`}
+                >
+
+                  <div className="message-role">
+                    {message.role === 'user' ? t.you : t.assistant}
+                  </div>
+
+                  <div className="message-content">
+                    {message.content}
+                  </div>
+
+                </div>
+
+              ))}
+
+
+              {/* AI Thinking Status */}
+              {isSending && (
+
+                <div className="message-item assistant">
+
+                  <div className="message-role">
+                    {t.assistant}
+                  </div>
+
+                  <div className="message-content">
+                    {t.thinking}
+                  </div>
+
+                </div>
+
+              )}
+
+            </section>
+
+          )}
+
+
+          {/* Error Message */}
+          {errorMessage && activeSessionId && (
+
+            <div className="chat-error">
+              {errorMessage}
+            </div>
+
+          )}
+
+
+          {/* Message Input */}
+          <div className="chat-input-container">
+
+            <input
+              type="text"
+              placeholder={t.askAnything}
+              value={inputMessage}
+              onChange={(event) => setInputMessage(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  handleSendMessage()
+                }
+              }}
+              disabled={
+                !activeSessionId ||
+                isSending ||
+                isLoadingMessages
               }
-            }}
-            disabled={
-              !activeSessionId ||
-              isSending ||
-              isLoadingMessages
-            }
-          />
+            />
 
-          <button
-            onClick={handleSendMessage}
-            disabled={
-              !activeSessionId ||
-              !inputMessage.trim() ||
-              isSending ||
-              isLoadingMessages
-            }
-          >
-            {isSending ? t.sending : t.send}
-          </button>
+            <button
+              onClick={handleSendMessage}
+              disabled={
+                !activeSessionId ||
+                !inputMessage.trim() ||
+                isSending ||
+                isLoadingMessages
+              }
+            >
+              {isSending ? t.sending : t.send}
+            </button>
 
-        </div>
+          </div>
 
-      </main>
+        </main>
 
-    </div>
+      </div>
+    </>
   )
 }
 

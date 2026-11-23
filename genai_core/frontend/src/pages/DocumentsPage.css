@@ -1,0 +1,425 @@
+.documents-container {
+  min-height: calc(100vh - 54px);
+  padding: 32px;
+  background: #f5f7fa;
+  box-sizing: border-box;
+}
+
+.documents-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 28px;
+}
+
+.documents-header h1 {
+  margin: 0 0 8px;
+  color: #1f2937;
+}
+
+.documents-header p,
+.section-description {
+  color: #64748b;
+}
+
+.refresh-button,
+.upload-button {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 6px;
+  background: #2563eb;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.refresh-button:disabled,
+.upload-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.upload-section,
+.document-list-section {
+  background: white;
+  padding: 24px;
+  margin-bottom: 24px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.upload-section h2,
+.document-list-section h2 {
+  margin-top: 0;
+  color: #1f2937;
+}
+
+.section-description {
+  margin-bottom: 24px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin: 20px 0;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-weight: 600;
+  color: #374151;
+}
+
+.form-group input {
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.form-group input:focus {
+  outline: 2px solid #93c5fd;
+  border-color: #2563eb;
+}
+
+.form-group small {
+  color: #64748b;
+}
+
+.upload-button {
+  margin-top: 8px;
+}
+
+.documents-error,
+.documents-success {
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  border-radius: 6px;
+}
+
+.documents-error {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.documents-success {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.document-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.document-list-header span {
+  color: #64748b;
+}
+
+.empty-documents {
+  padding: 32px;
+  text-align: center;
+  color: #64748b;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.document-card {
+  margin-bottom: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.document-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px;
+  cursor: pointer;
+  background: #f8fafc;
+  list-style: none;
+}
+
+.document-summary::-webkit-details-marker {
+  display: none;
+}
+
+.document-summary h3 {
+  margin: 0 0 6px;
+  color: #1f2937;
+}
+
+.document-summary p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.expand-indicator {
+  color: #64748b;
+}
+
+.document-versions {
+  padding: 12px 18px;
+}
+
+.document-version {
+  padding: 16px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.document-version:last-child {
+  border-bottom: none;
+}
+
+.version-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.version-status {
+  padding: 4px 9px;
+  border-radius: 12px;
+  font-size: 12px;
+  text-transform: capitalize;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.version-status.current {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.version-status.scheduled {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.version-status.superseded {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.version-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 20px;
+}
+
+.version-details p {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 768px) {
+  .documents-container {
+    padding: 18px;
+  }
+
+  .documents-header {
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .form-grid,
+  .version-details {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .documents-header {
+    flex-direction: column;
+  }
+
+  .document-list-header {
+    align-items: flex-start;
+    gap: 8px;
+    flex-direction: column;
+  }
+}
+
+/* Custom file picker */
+.hidden-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.custom-file-picker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.choose-file-button {
+  padding: 10px 18px;
+  border: 1px solid #2563eb;
+  border-radius: 6px;
+  background: #2563eb;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.choose-file-button:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.choose-file-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.selected-file-name {
+  color: #64748b;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+/* =========================================
+   Global Dark Theme - Documents Page
+   ========================================= */
+
+/* Main page */
+:root[data-theme='dark'] .documents-container {
+  background: #111827;
+  color: #f9fafb;
+}
+
+/* Page headings */
+:root[data-theme='dark'] .documents-header h1,
+:root[data-theme='dark'] .documents-container h2,
+:root[data-theme='dark'] .documents-container h3 {
+  color: #f9fafb;
+}
+
+/* Descriptions and supporting text */
+:root[data-theme='dark'] .documents-header p,
+:root[data-theme='dark'] .section-description,
+:root[data-theme='dark'] .documents-container small {
+  color: #9ca3af;
+}
+
+/* Upload and document list sections */
+:root[data-theme='dark'] .documents-container section {
+  background: #1f2937;
+  color: #f9fafb;
+  border-color: #374151;
+}
+
+/* Form labels */
+:root[data-theme='dark'] .documents-container label {
+  color: #e5e7eb;
+}
+
+/* Text inputs, dropdowns, and date inputs */
+:root[data-theme='dark'] .documents-container input,
+:root[data-theme='dark'] .documents-container select,
+:root[data-theme='dark'] .documents-container textarea {
+  background: #374151;
+  color: #f9fafb;
+  border-color: #4b5563;
+}
+
+/* Input placeholders */
+:root[data-theme='dark'] .documents-container input::placeholder,
+:root[data-theme='dark'] .documents-container textarea::placeholder {
+  color: #9ca3af;
+}
+
+/* Dropdown options */
+:root[data-theme='dark'] .documents-container select option {
+  background: #374151;
+  color: #f9fafb;
+}
+
+/* Document cards */
+:root[data-theme='dark'] .document-card {
+  background: #1f2937;
+  color: #f9fafb;
+  border-color: #374151;
+}
+
+/* Document summary */
+:root[data-theme='dark'] .document-summary {
+  background: #374151;
+  color: #f9fafb;
+}
+
+/* Document metadata */
+:root[data-theme='dark'] .document-card p,
+:root[data-theme='dark'] .document-card span,
+:root[data-theme='dark'] .document-card strong {
+  color: inherit;
+}
+
+/* Version information */
+:root[data-theme='dark'] .document-card details,
+:root[data-theme='dark'] .document-card summary {
+  color: #e5e7eb;
+}
+
+/* Empty document list */
+:root[data-theme='dark'] .empty-state {
+  background: #1f2937;
+  color: #9ca3af;
+}
+
+/* File picker text */
+:root[data-theme='dark'] .file-name {
+  color: #d1d5db;
+}
+
+/* Success and error messages */
+:root[data-theme='dark'] .documents-container .success-message {
+  background: #14532d;
+  color: #dcfce7;
+  border-color: #166534;
+}
+
+:root[data-theme='dark'] .documents-container .error-message {
+  background: #7f1d1d;
+  color: #fee2e2;
+  border-color: #991b1b;
+}
+
+/* Document status badges */
+:root[data-theme='dark'] .status-current {
+  background: #14532d;
+  color: #dcfce7;
+}
+
+:root[data-theme='dark'] .status-scheduled {
+  background: #1e3a8a;
+  color: #dbeafe;
+}
+
+:root[data-theme='dark'] .status-superseded {
+  background: #374151;
+  color: #d1d5db;
+}
