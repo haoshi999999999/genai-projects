@@ -1,6 +1,9 @@
-// FastAPI backend URL
-const API_BASE_URL = 'http://localhost:8000'
+// FastAPI backend URL from environment configuration
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 
+if (!API_BASE_URL) {
+  throw new Error('VITE_API_BASE_URL is not configured')
+}
 
 // ==================================================
 // Request / Response Interfaces
@@ -61,6 +64,70 @@ export interface TranslateResponse {
 
 
 // ==================================================
+// Document Interfaces
+// ==================================================
+
+// Document upload request
+export interface UploadDocumentRequest {
+  file: File
+  document_name?: string
+  document_version?: string
+  effective_date?: string
+  authority?: string
+  owner_department?: string
+}
+
+// Document upload response
+export interface UploadDocumentResponse {
+  status: string
+  filename: string
+  size: number
+
+  metadata: {
+    document_name: string
+    document_version: string | null
+    effective_date: string | null
+    authority: string | null
+    upload_date: string
+    owner_department: string | null
+  }
+
+  message: string
+}
+
+// Individual document version
+export interface DocumentVersion {
+  version_id: string
+  source: string | null
+  document_name: string | null
+  document_version: string
+  version_status: string
+  is_current: boolean
+  effective_date: string | null
+  authority: string | null
+  owner_department: string | null
+  file_hash: string | null
+  upload_date: string | null
+  chunks: number
+}
+
+// Logical document containing one or more versions
+export interface DocumentInfo {
+  document_id: string
+  document_name: string
+  store_type: 'shared' | 'private'
+  is_shared: boolean
+  versions: DocumentVersion[]
+}
+
+// Document list API response
+export interface DocumentListResponse {
+  status: string
+  count: number
+  documents: DocumentInfo[]
+}
+
+// ==================================================
 // Helper Functions
 // ==================================================
 
@@ -97,7 +164,6 @@ export async function loginUser(
     body: JSON.stringify(credentials),
   })
 
-  // Handle unsuccessful login
   if (!response.ok) {
 
     const errorData = await response.json().catch(() => null)
@@ -107,7 +173,6 @@ export async function loginUser(
     )
   }
 
-  // Convert backend JSON response into JavaScript object
   const data: LoginResponse = await response.json()
 
   return data
@@ -234,6 +299,86 @@ export async function sendMessage(
 
     throw new Error(
       errorData?.detail || 'Failed to send message.'
+    )
+  }
+
+  return await response.json()
+}
+
+
+// ==================================================
+// Upload Document
+// ==================================================
+
+export async function uploadDocument(
+  request: UploadDocumentRequest
+): Promise<UploadDocumentResponse> {
+
+  const formData = new FormData()
+
+  // Required file
+  formData.append('file', request.file)
+
+  // Optional document metadata
+  if (request.document_name) {
+    formData.append('document_name', request.document_name)
+  }
+
+  if (request.document_version) {
+    formData.append('document_version', request.document_version)
+  }
+
+  if (request.effective_date) {
+    formData.append('effective_date', request.effective_date)
+  }
+
+  if (request.authority) {
+    formData.append('authority', request.authority)
+  }
+
+  if (request.owner_department) {
+    formData.append('owner_department', request.owner_department)
+  }
+
+  const response = await fetch(`${API_BASE_URL}/documents/upload`, {
+    method: 'POST',
+
+    headers: getAuthHeaders(),
+
+    body: formData,
+  })
+
+  if (!response.ok) {
+
+    const errorData = await response.json().catch(() => null)
+
+    throw new Error(
+      errorData?.detail || 'Failed to upload document.'
+    )
+  }
+
+  return await response.json()
+}
+
+
+// ==================================================
+// Get Uploaded Documents
+// ==================================================
+
+export async function getDocuments(): Promise<DocumentListResponse> {
+
+  const response = await fetch(`${API_BASE_URL}/documents/list`, {
+    method: 'GET',
+
+    headers: getAuthHeaders(),
+  })
+
+  if (!response.ok) {
+
+    const errorData = await response.json().catch(() => null)
+
+    throw new Error(
+      errorData?.detail || 'Failed to retrieve documents.'
     )
   }
 

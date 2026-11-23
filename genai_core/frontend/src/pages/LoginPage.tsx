@@ -99,12 +99,15 @@ function LoginPage() {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+
   const navigate = useNavigate()
 
+  // Load saved theme preference
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return localStorage.getItem('theme') === 'dark'
   })
 
+  // Load saved language preference
   const [language, setLanguage] = useState<Language>(() => {
     const savedLanguage = localStorage.getItem('language')
 
@@ -118,9 +121,12 @@ function LoginPage() {
     return 'en'
   })
 
-  // Save theme preference
+  // Save theme preference and apply it application-wide
   useEffect(() => {
-    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light')
+    const theme = isDarkMode ? 'dark' : 'light'
+
+    localStorage.setItem('theme', theme)
+    document.documentElement.dataset.theme = theme
   }, [isDarkMode])
 
   // Save language preference
@@ -131,39 +137,38 @@ function LoginPage() {
   const t = translations[language]
 
   // Handle login form submission
-const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-  event.preventDefault()
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
 
-  setErrorMessage('')
-  setIsLoading(true)
+    setErrorMessage('')
+    setIsLoading(true)
 
-  try {
-    const result = await loginUser({
-      email,
-      password,
-    })
+    try {
+      const result = await loginUser({
+        email,
+        password,
+      })
 
-    // Store JWT token for this browser session
-    sessionStorage.setItem('access_token', result.access_token)
+      // Store JWT token for this browser session
+      sessionStorage.setItem('access_token', result.access_token)
 
-    console.log('Login successful!')
+      console.log('Login successful!')
 
-    // Redirect to the Chat page
-    navigate('/chat')
+      // Redirect to the Chat page
+      navigate('/chat')
+    } catch (error) {
+      // Remove any existing token if login fails
+      sessionStorage.removeItem('access_token')
 
-  } catch (error) {
-    // Remove any existing token if login fails
-    sessionStorage.removeItem('access_token')
-
-    if (error instanceof Error) {
-      setErrorMessage(error.message)
-    } else {
-      setErrorMessage('An unexpected error occurred.')
+      if (error instanceof Error) {
+        setErrorMessage(error.message)
+      } else {
+        setErrorMessage('An unexpected error occurred.')
+      }
+    } finally {
+      setIsLoading(false)
     }
-  } finally {
-    setIsLoading(false)
   }
-}
 
   return (
     <div className={`login-container ${isDarkMode ? 'dark' : ''}`}>
@@ -251,19 +256,22 @@ const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
               required
             />
           </div>
-        {errorMessage && (
-        <div className="error-message" role="alert">
-            {errorMessage}
-        </div>
-        )}
-                {/* Login button */}
-        <button
+
+          {/* Error message */}
+          {errorMessage && (
+            <div className="error-message" role="alert">
+              {errorMessage}
+            </div>
+          )}
+
+          {/* Login button */}
+          <button
             type="submit"
             className="login-button"
             disabled={isLoading}
-            >
+          >
             {isLoading ? 'Logging in...' : t.login}
-        </button>
+          </button>
 
         </form>
       </div>

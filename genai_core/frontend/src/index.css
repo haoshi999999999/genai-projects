@@ -2,12 +2,19 @@
   font-family: Arial, Helvetica, sans-serif;
   color: #1f2937;
   background: #f3f4f6;
-
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
 
+/* Global dark theme */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  color: #f9fafb;
+  background: #111827;
+}
+
+/* Apply consistent box sizing */
 * {
   box-sizing: border-box;
 }
@@ -16,6 +23,17 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: #f3f4f6;
+  color: #1f2937;
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
+}
+
+/* Dark theme body */
+:root[data-theme='dark'] body {
+  background: #111827;
+  color: #f9fafb;
 }
 
 #root {

@@ -9,6 +9,7 @@ import type { ReactNode } from 'react'
 
 import LoginPage from './pages/LoginPage'
 import ChatPage from './pages/ChatPage'
+import DocumentsPage from './pages/DocumentsPage'
 
 // Protect pages that require authentication
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -35,6 +36,16 @@ function App() {
           element={
             <ProtectedRoute>
               <ChatPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Protected Documents Page */}
+        <Route
+          path="/documents"
+          element={
+            <ProtectedRoute>
+              <DocumentsPage />
             </ProtectedRoute>
           }
         />
