@@ -290,3 +290,33 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+.success-message {
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: 6px;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 14px;
+}
+
+.register-link {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.register-link:hover {
+  text-decoration: underline;
+}
+
+[data-theme='dark'] .success-message {
+  background: #14532d;
+  color: #bbf7d0;
+}

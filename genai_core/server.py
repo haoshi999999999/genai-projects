@@ -19,6 +19,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from dotenv import load_dotenv
 
+from users.router import create_users_router
+
 from fastapi import (
     FastAPI,
     Depends,
@@ -250,6 +252,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -412,6 +415,14 @@ async def get_current_user(
     return user
 
 
+app.include_router(
+    create_users_router(
+        get_current_user_dependency=get_current_user,
+        get_db_dependency=get_db,
+        document_manager=agent.docs
+    )
+)
+
 # ==================================================
 # 12. SESSION OWNERSHIP VALIDATION
 # ==================================================
@@ -511,6 +522,10 @@ class RegisterRequest(BaseModel):
 
     password: str
 
+    first_name: str
+
+    last_name: str
+
 
 class TestLLMRequest(BaseModel):
 
@@ -566,7 +581,6 @@ class SessionRequest(BaseModel):
 # ==================================================
 # 15. AUTHENTICATION ENDPOINTS
 # ==================================================
-
 @app.post("/register")
 async def register(
     req: RegisterRequest,
@@ -574,19 +588,31 @@ async def register(
 ):
 
     email = req.email.strip().lower()
+    first_name = req.first_name.strip()
+    last_name = req.last_name.strip()
 
     if not email:
-
         raise HTTPException(
             status_code=400,
             detail="Email is required."
         )
 
     if not req.password:
-
         raise HTTPException(
             status_code=400,
             detail="Password is required."
+        )
+
+    if not first_name or not last_name:
+        raise HTTPException(
+            status_code=400,
+            detail="First name and last name are required."
+        )
+
+    if len(first_name) > 100 or len(last_name) > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="First name and last name must not exceed 100 characters."
         )
 
     result = await db.execute(
@@ -598,7 +624,6 @@ async def register(
     existing_user = result.scalar_one_or_none()
 
     if existing_user:
-
         raise HTTPException(
             status_code=400,
             detail="User already exists"
@@ -606,7 +631,9 @@ async def register(
 
     user = User(
         email=email,
-        password_hash=hash_password(req.password)
+        password_hash=hash_password(req.password),
+        first_name=first_name,
+        last_name=last_name
     )
 
     db.add(user)
@@ -616,7 +643,6 @@ async def register(
     return {
         "status": "registered"
     }
-
 
 @app.post("/login")
 async def login(

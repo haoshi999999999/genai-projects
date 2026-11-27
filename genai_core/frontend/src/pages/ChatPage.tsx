@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import PageNavigation from '../components/PageNavigation'
 
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+
 import {
   getSessions,
   createSession,
@@ -869,8 +872,14 @@ function ChatPage() {
                   </div>
 
                   <div className="message-content">
-                    {message.content}
-                  </div>
+                  {message.role === 'assistant' ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {message.content}
+                    </ReactMarkdown>
+                  ) : (
+                    message.content
+                  )}
+                </div>
 
                 </div>
 

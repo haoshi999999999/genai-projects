@@ -1,9 +1,12 @@
 import hashlib
 import logging
 import uuid
+import shutil
 
 from datetime import date, datetime, timezone
 from pathlib import Path
+
+from copy import copy
 
 from langchain_community.document_loaders import (
     PyPDFLoader,
@@ -127,6 +130,44 @@ class DocumentIngestion:
         ).hexdigest()
 
         return self.users_dir / user_hash
+
+    def delete_user_store(
+        self,
+        user_id
+    ):
+
+        normalized = self._normalize_user_id(
+            user_id
+        )
+
+        directory = self._get_user_directory(
+            normalized
+        )
+
+        # Remove the user's in-memory FAISS reference.
+        self.user_stores.pop(
+            normalized,
+            None
+        )
+
+        # Remove only this user's private directory.
+        if directory.exists():
+
+            shutil.rmtree(directory)
+
+            logger.info(
+                "Deleted private document store for user: %s",
+                normalized
+            )
+
+        else:
+
+            logger.info(
+                "No private document store found for user: %s",
+                normalized
+            )
+
+        return True
 
     # ==================================================
     # 4. FAISS STORE MANAGEMENT
@@ -1374,12 +1415,17 @@ class DocumentIngestion:
         # --------------------------------------------------
 
         stores = [
+            (
+                "shared",
+                self.shared_store
+            ),
 
-            self.shared_store,
-
-            self._get_store(
-                user_id=normalized_user_id,
-                is_shared=False
+            (
+                "private",
+                self._get_store(
+                    user_id=normalized_user_id,
+                    is_shared=False
+                )
             )
 
         ]
@@ -1396,7 +1442,7 @@ class DocumentIngestion:
         # 3. Search each FAISS store
         # --------------------------------------------------
 
-        for store in stores:
+        for store_scope, store in stores:
 
             if store is None:
 
@@ -1527,12 +1573,23 @@ class DocumentIngestion:
                     )
 
                 # --------------------------------------------------
-                # 8. Add valid results
+                # 8. Add valid results with retrieval provenance
                 # --------------------------------------------------
 
-                results.extend(
-                    filtered_results
-                )
+                for document, score in filtered_results:
+
+                    # Copy the document so we don't modify
+                    # the original FAISS document metadata.
+                    retrieved_document = copy(document)
+
+                    retrieved_document.metadata = {
+                        **document.metadata,
+                        "_retrieval_scope": store_scope
+                    }
+
+                    results.append(
+                        (retrieved_document, score)
+                    )
 
             except Exception:
 
@@ -1578,10 +1635,10 @@ class DocumentIngestion:
 
         stores = [
 
-            (
-                "shared",
-                self.shared_store
-            ),
+            #(
+               # "shared",
+               # self.shared_store
+            #),
 
             (
                 "private",
@@ -1655,10 +1712,10 @@ class DocumentIngestion:
 
         stores = [
 
-            (
-                "shared",
-                self.shared_store
-            ),
+            #(
+               # "shared",
+               # self.shared_store
+            #),
 
             (
                 "private",

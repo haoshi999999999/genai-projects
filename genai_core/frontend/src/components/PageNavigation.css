@@ -21,8 +21,8 @@
   gap: 10px;
 }
 
-.navigation-button,
-.navigation-logout {
+.navigation-link,
+.logout-button {
   padding: 9px 16px;
   border: none;
   border-radius: 6px;
@@ -30,18 +30,19 @@
   color: white;
   cursor: pointer;
   font-size: 14px;
+  white-space: nowrap;
 }
 
-.navigation-button:hover,
-.navigation-logout:hover {
+.navigation-link:hover,
+.logout-button:hover {
   background: #374151;
 }
 
-.navigation-button.active {
+.navigation-link.active {
   background: #2563eb;
 }
 
-.navigation-logout {
+.logout-button {
   background: #374151;
 }
 
@@ -55,8 +56,12 @@
     font-size: 14px;
   }
 
-  .navigation-button,
-  .navigation-logout {
+  .navigation-links {
+    gap: 4px;
+  }
+
+  .navigation-link,
+  .logout-button {
     padding: 8px;
     font-size: 12px;
   }

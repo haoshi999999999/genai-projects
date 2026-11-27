@@ -8,8 +8,10 @@ import {
 import type { ReactNode } from 'react'
 
 import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
 import ChatPage from './pages/ChatPage'
 import DocumentsPage from './pages/DocumentsPage'
+import SettingsPage from './pages/SettingsPage'
 
 // Protect pages that require authentication
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -27,8 +29,11 @@ function App() {
     <BrowserRouter>
       <Routes>
 
-        {/* Login Page */}
+        {/* Public Login Page */}
         <Route path="/" element={<LoginPage />} />
+
+        {/* Public Registration Page */}
+        <Route path="/register" element={<RegisterPage />} />
 
         {/* Protected Chat Page */}
         <Route
@@ -46,6 +51,16 @@ function App() {
           element={
             <ProtectedRoute>
               <DocumentsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Protected Settings Page */}
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <SettingsPage />
             </ProtectedRoute>
           }
         />

@@ -1,0 +1,142 @@
+.register-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: #f3f4f6;
+}
+
+.register-box {
+  width: 100%;
+  max-width: 440px;
+  padding: 36px;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  box-sizing: border-box;
+}
+
+.register-box h1 {
+  margin: 0 0 12px;
+  text-align: center;
+  font-size: 28px;
+}
+
+.register-box > p {
+  margin-bottom: 28px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.register-form-group {
+  margin-bottom: 20px;
+}
+
+.register-form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.register-form-group input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-sizing: border-box;
+  font-size: 14px;
+}
+
+.register-form-group input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.register-button {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 6px;
+  background: #2563eb;
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.register-button:hover {
+  background: #1d4ed8;
+}
+
+.register-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.register-error {
+  margin-bottom: 16px;
+  padding: 10px;
+  border-radius: 6px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 14px;
+}
+
+.register-login-link {
+  display: block;
+  width: 100%;
+  margin-top: 20px;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.register-login-link:hover {
+  text-decoration: underline;
+}
+
+/* Dark mode */
+
+[data-theme='dark'] .register-container {
+  background: #111827;
+}
+
+[data-theme='dark'] .register-box {
+  background: #1f2937;
+  color: white;
+}
+
+[data-theme='dark'] .register-box > p {
+  color: #9ca3af;
+}
+
+[data-theme='dark'] .register-form-group input {
+  background: #374151;
+  border-color: #4b5563;
+  color: white;
+}
+
+[data-theme='dark'] .register-form-group input::placeholder {
+  color: #9ca3af;
+}
+
+[data-theme='dark'] .register-error {
+  background: #7f1d1d;
+  color: #fecaca;
+}
+
+@media (max-width: 500px) {
+  .register-box {
+    padding: 24px;
+  }
+
+  .register-box h1 {
+    font-size: 24px;
+  }
+}
