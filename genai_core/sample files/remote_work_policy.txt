@@ -1,0 +1,153 @@
+REMOTE WORK POLICY Version: 1.0 Effective Date: November 26, 2026
+Document Owner: Human Resources Department: Human Resources Document
+Classification: Internal
+
+1.  PURPOSE
+
+This policy establishes guidelines for employees who are approved to
+work remotely. It is intended to support flexible work arrangements
+while maintaining productivity, information security, effective
+communication, and reliable business operations.
+
+2.  SCOPE
+
+This policy applies to employees whose roles are approved for remote or
+hybrid work. Remote work is not an automatic entitlement. Each
+arrangement must be approved by the employee’s manager and may be
+changed when business needs require.
+
+3.  REMOTE WORK ARRANGEMENTS
+
+Employees may be approved for one of the following arrangements:
+
+-   Fully remote: The employee works from an approved remote location on
+    all scheduled working days.
+-   Hybrid: The employee divides working time between an approved remote
+    location and the assigned office.
+-   Occasional remote work: The employee works remotely on specific days
+    with advance manager approval.
+
+Managers determine which arrangement is appropriate based on job
+responsibilities, team coverage, customer commitments, and operational
+requirements.
+
+4.  WORKING HOURS AND AVAILABILITY
+
+Employees must follow their normal scheduled working hours unless an
+alternative schedule has been approved by their manager.
+
+Employees working remotely must:
+
+-   Be available during their agreed working hours.
+-   Attend required meetings and respond to reasonable work-related
+    communications.
+-   Keep their calendar accurate and indicate planned breaks or periods
+    of unavailability.
+-   Notify their manager as soon as practical if an illness, power
+    outage, internet failure, or other issue prevents them from working.
+
+Remote work does not change an employee’s responsibility to meet
+assigned deadlines and performance expectations.
+
+5.  OFFICE ATTENDANCE AND TEAM MEETINGS
+
+Employees with hybrid or occasional remote arrangements may be required
+to attend the office for team meetings, training, customer meetings,
+equipment support, or other business needs.
+
+Managers should provide reasonable advance notice when an employee’s
+physical attendance is required, whenever practical. Employees must
+follow any office attendance schedule communicated by their manager.
+
+6.  WORK LOCATION
+
+Employees must work from the remote location approved by their manager.
+Employees who want to change their regular remote work location must
+obtain approval before making the change.
+
+Working from another state or country may create legal, tax, payroll,
+privacy, or security obligations. Employees must not work from a
+different state or country without prior written approval from Human
+Resources and their manager.
+
+7.  EQUIPMENT AND EXPENSES
+
+The company may provide a laptop, monitor, keyboard, headset, or other
+equipment based on role requirements and availability.
+
+Company equipment must be used primarily for authorized business
+purposes and handled with reasonable care. Employees must promptly
+report lost, stolen, damaged, or malfunctioning company equipment to IT.
+
+Employees are responsible for maintaining a reliable internet connection
+and a suitable workspace unless a different arrangement has been
+approved in writing. Reimbursement of internet, phone, furniture, or
+other remote-work expenses is subject to the company’s applicable
+expense policy and prior approval. Employees should not assume that an
+expense will be reimbursed without confirmation.
+
+8.  INFORMATION SECURITY AND CONFIDENTIALITY
+
+Employees must protect company, customer, and employee information while
+working remotely. They must:
+
+-   Connect to company systems using company-approved security methods.
+-   Use multi-factor authentication whenever it is required or available
+    for company accounts.
+-   Keep work devices protected by a password or other approved
+    screen-lock method.
+-   Lock their device whenever they leave it unattended.
+-   Avoid discussing confidential information where unauthorized people
+    may overhear.
+-   Store company information only in approved company systems and
+    locations.
+-   Never share account credentials or allow another person to use their
+    company device or account.
+-   Report suspected phishing, malware, unauthorized access, or loss of
+    company information to IT or the designated security contact
+    immediately.
+
+Employees must follow all other company information-security and
+data-handling policies.
+
+9.  HEALTH, SAFETY, AND WORKSPACE
+
+Employees are responsible for maintaining a reasonably safe, clean, and
+ergonomically suitable remote workspace. Work areas should have adequate
+lighting, a stable work surface, and minimal avoidable distractions.
+
+Employees should report work-related injuries or safety concerns through
+the company’s established reporting process.
+
+10. PERFORMANCE AND COMMUNICATION
+
+Managers will evaluate remote employees using the same role-related
+performance expectations applied to employees working at the office.
+Remote employees are expected to communicate proactively, collaborate
+with colleagues, and keep their managers informed about progress,
+blockers, and changes that may affect deliverables.
+
+11. CHANGES OR TERMINATION OF AN ARRANGEMENT
+
+The company may modify, suspend, or end a remote work arrangement based
+on business needs, performance concerns, security requirements, role
+changes, or failure to follow this policy.
+
+Employees who want to change their remote work schedule or arrangement
+must discuss the request with their manager and obtain approval before
+implementing the change.
+
+12. QUESTIONS AND EXCEPTIONS
+
+Questions about this policy should be directed to the employee’s manager
+or Human Resources. Exceptions require prior written approval from Human
+Resources and the appropriate department leader.
+
+13. POLICY ACKNOWLEDGMENT
+
+Employees participating in a remote work arrangement are responsible for
+reading, understanding, and following this policy. This policy does not
+replace applicable employment agreements, local requirements, or other
+company policies.
+
+END OF POLICY

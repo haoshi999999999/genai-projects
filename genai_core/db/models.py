@@ -12,6 +12,9 @@ class User(Base):
     email = Column(String, primary_key=True)
     password_hash = Column(String, nullable=False)
 
+    first_name = Column(String(100), nullable=True)
+    last_name = Column(String(100), nullable=True)
+
     sessions = relationship("Session", back_populates="user")
 
 
@@ -19,9 +22,18 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_email = Column(String, ForeignKey("users.email"))
+    user_email = Column(
+        String,
+        ForeignKey("users.email"),
+        nullable=False
+    )
     title = Column(String, default="New Chat")
     persona = Column(String, default="default")
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
 
     user = relationship("User", back_populates="sessions")
     messages = relationship("Message", back_populates="session")

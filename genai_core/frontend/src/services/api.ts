@@ -32,6 +32,19 @@ export interface LoginResponse {
   token_type: string
 }
 
+// Register request structure
+export interface RegisterRequest {
+  email: string
+  password: string
+  first_name: string
+  last_name: string
+}
+
+// Register response structure
+export interface RegisterResponse {
+  status: string
+}
+
 // Chat session structure
 export interface SessionInfo {
   title: string
@@ -62,7 +75,27 @@ export interface TranslateResponse {
   target_language: SupportedLanguage
 }
 
+// ==================================================
+// User Account Interfaces
+// ==================================================
 
+export interface UserResponse {
+  email: string
+  first_name: string | null
+  last_name: string | null
+  status: string
+}
+
+export interface UpdateUserRequest {
+  first_name?: string
+  last_name?: string
+  password?: string
+}
+
+export interface DeleteUserResponse {
+  email: string
+  status: string
+}
 // ==================================================
 // Document Interfaces
 // ==================================================
@@ -178,6 +211,43 @@ export async function loginUser(
   return data
 }
 
+// ==================================================
+// Register API
+// ==================================================
+export async function registerUser(
+  user: RegisterRequest
+): Promise<RegisterResponse> {
+
+  const response = await fetch(`${API_BASE_URL}/register`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(user),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null)
+
+    let message = 'Registration failed. Please try again.'
+
+    if (typeof errorData?.detail === 'string') {
+      message = errorData.detail
+    } else if (Array.isArray(errorData?.detail)) {
+      message = errorData.detail
+        .map((item: { msg?: string; loc?: (string | number)[] }) => {
+          const field = item.loc?.at(-1)
+          return field ? `${field}: ${item.msg}` : item.msg
+        })
+        .filter(Boolean)
+        .join('; ')
+    }
+
+    throw new Error(message)
+  }
+
+  return await response.json()
+}
 
 // ==================================================
 // Get Chat Sessions
@@ -424,6 +494,82 @@ export async function translateText(
 
     throw new Error(
       errorData?.detail || 'Failed to translate text.'
+    )
+  }
+
+  return await response.json()
+}
+
+// ==================================================
+// User Account APIs
+// ==================================================
+
+// Get authenticated user's account
+export async function getMyAccount(): Promise<UserResponse> {
+
+  const response = await fetch(`${API_BASE_URL}/users/me`, {
+    method: 'GET',
+
+    headers: getAuthHeaders(),
+  })
+
+  if (!response.ok) {
+
+    const errorData = await response.json().catch(() => null)
+
+    throw new Error(
+      errorData?.detail || 'Failed to retrieve account information.'
+    )
+  }
+
+  return await response.json()
+}
+
+
+// Update authenticated user's password
+export async function updateMyAccount(
+  request: UpdateUserRequest
+): Promise<UserResponse> {
+
+  const response = await fetch(`${API_BASE_URL}/users/me`, {
+    method: 'PATCH',
+
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json',
+    },
+
+    body: JSON.stringify(request),
+  })
+
+  if (!response.ok) {
+
+    const errorData = await response.json().catch(() => null)
+
+    throw new Error(
+      errorData?.detail || 'Failed to update password.'
+    )
+  }
+
+  return await response.json()
+}
+
+
+// Delete authenticated user's account
+export async function deleteMyAccount(): Promise<DeleteUserResponse> {
+
+  const response = await fetch(`${API_BASE_URL}/users/me`, {
+    method: 'DELETE',
+
+    headers: getAuthHeaders(),
+  })
+
+  if (!response.ok) {
+
+    const errorData = await response.json().catch(() => null)
+
+    throw new Error(
+      errorData?.detail || 'Failed to delete account.'
     )
   }
 

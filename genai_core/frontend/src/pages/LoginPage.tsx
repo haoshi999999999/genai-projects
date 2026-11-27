@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { loginUser } from '../services/api'
 import './LoginPage.css'
 
@@ -14,6 +14,8 @@ const translations = {
     emailPlaceholder: 'Enter your email',
     passwordPlaceholder: 'Enter your password',
     login: 'Login',
+    register: 'Create an account',
+    registrationSuccess: 'Registration successful. You can now log in.',
     darkMode: 'Dark Mode',
     lightMode: 'Light Mode',
     language: 'Language',
@@ -27,6 +29,8 @@ const translations = {
     emailPlaceholder: '请输入邮箱',
     passwordPlaceholder: '请输入密码',
     login: '登录',
+    register: '创建账户',
+    registrationSuccess: '注册成功！现在可以登录了。',
     darkMode: '深色模式',
     lightMode: '浅色模式',
     language: '语言',
@@ -40,6 +44,8 @@ const translations = {
     emailPlaceholder: '請輸入電子郵件',
     passwordPlaceholder: '請輸入密碼',
     login: '登入',
+    register: '建立帳戶',
+    registrationSuccess: '註冊成功！現在可以登入了。',
     darkMode: '深色模式',
     lightMode: '淺色模式',
     language: '語言',
@@ -53,6 +59,8 @@ const translations = {
     emailPlaceholder: 'E-Mail eingeben',
     passwordPlaceholder: 'Passwort eingeben',
     login: 'Anmelden',
+    register: 'Konto erstellen',
+    registrationSuccess: 'Registrierung erfolgreich. Sie können sich jetzt anmelden.',
     darkMode: 'Dunkelmodus',
     lightMode: 'Hellmodus',
     language: 'Sprache',
@@ -66,6 +74,8 @@ const translations = {
     emailPlaceholder: 'Entrez votre e-mail',
     passwordPlaceholder: 'Entrez votre mot de passe',
     login: 'Connexion',
+    register: 'Créer un compte',
+    registrationSuccess: 'Inscription réussie. Vous pouvez maintenant vous connecter.',
     darkMode: 'Mode sombre',
     lightMode: 'Mode clair',
     language: 'Langue',
@@ -79,6 +89,8 @@ const translations = {
     emailPlaceholder: 'Введите электронную почту',
     passwordPlaceholder: 'Введите пароль',
     login: 'Войти',
+    register: 'Создать аккаунт',
+    registrationSuccess: 'Регистрация прошла успешно. Теперь вы можете войти.',
     darkMode: 'Темный режим',
     lightMode: 'Светлый режим',
     language: 'Язык',
@@ -101,6 +113,10 @@ function LoginPage() {
   const [errorMessage, setErrorMessage] = useState('')
 
   const navigate = useNavigate()
+  const location = useLocation()
+
+  // Read registration success message from RegisterPage
+  const [registrationSuccess, setRegistrationSuccess] = useState('')
 
   // Load saved theme preference
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -133,6 +149,22 @@ function LoginPage() {
   useEffect(() => {
     localStorage.setItem('language', language)
   }, [language])
+
+  // Read and preserve registration success message
+  useEffect(() => {
+    const message = (
+      location.state as { registrationSuccess?: string } | null
+    )?.registrationSuccess
+
+    if (message) {
+      setRegistrationSuccess(message)
+
+      navigate('/', {
+        replace: true,
+        state: null,
+      })
+    }
+  }, [location.state, navigate])
 
   const t = translations[language]
 
@@ -220,6 +252,13 @@ function LoginPage() {
         {/* Subtitle */}
         <p>{t.subtitle}</p>
 
+        {/* Registration success message */}
+        {registrationSuccess && (
+          <div className="success-message" role="status">
+            {registrationSuccess}
+          </div>
+        )}
+
         {/* Login form */}
         <form onSubmit={handleSubmit}>
 
@@ -274,6 +313,16 @@ function LoginPage() {
           </button>
 
         </form>
+
+        {/* Registration link */}
+        <button
+          type="button"
+          className="register-link"
+          onClick={() => navigate('/register')}
+        >
+          {t.register}
+        </button>
+
       </div>
     </div>
   )

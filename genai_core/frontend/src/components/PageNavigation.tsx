@@ -1,25 +1,17 @@
 import { useNavigate, useLocation } from 'react-router-dom'
-
 import { getSavedLanguage } from '../i18n/language'
 import { navigationTranslations } from '../i18n/navigationTranslations'
-
 import './PageNavigation.css'
 
 interface PageNavigationProps {
   logoutLabel?: string
 }
 
-function PageNavigation({
-  logoutLabel,
-}: PageNavigationProps) {
+function PageNavigation({ logoutLabel }: PageNavigationProps) {
   const navigate = useNavigate()
   const location = useLocation()
-
-  // Read the saved language preference
   const language = getSavedLanguage()
   const t = navigationTranslations[language]
-
-  // Use the supplied label when provided; otherwise use translation
   const translatedLogoutLabel = logoutLabel ?? t.logout
 
   const handleLogout = () => {
@@ -29,13 +21,9 @@ function PageNavigation({
 
   return (
     <nav className="page-navigation">
-
-      <div className="navigation-brand">
-        GenAI Assistant
-      </div>
+      <div className="navigation-brand">GenAI Assistant</div>
 
       <div className="navigation-links">
-
         <button
           type="button"
           className={
@@ -60,6 +48,17 @@ function PageNavigation({
           {t.documents}
         </button>
 
+        <button
+          type="button"
+          className={
+            location.pathname === '/settings'
+              ? 'navigation-link active'
+              : 'navigation-link'
+          }
+          onClick={() => navigate('/settings')}
+        >
+          {t.settings}
+        </button>
       </div>
 
       <button
@@ -69,7 +68,6 @@ function PageNavigation({
       >
         {translatedLogoutLabel}
       </button>
-
     </nav>
   )
 }
