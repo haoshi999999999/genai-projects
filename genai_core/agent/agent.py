@@ -577,6 +577,13 @@ class Agent:
                     "Unknown"
                 )
 
+                effective_date = doc.metadata.get(
+                    "effective_date"
+                )
+
+                if not effective_date:
+                    effective_date = "Not specified"
+
                 document_version = (
                     doc.metadata.get("document_version")
                     or doc.metadata.get("version_id")
@@ -609,6 +616,7 @@ class Agent:
                     f"Page: {page_number}\n"
                     f"Authority: {authority}\n"
                     f"Department: {owner_department}\n"
+                    f"Effective Date: {effective_date}\n"
                     f"Document Version: {document_version}\n"
                     f"Version Status: {version_status}\n"
                     f"Current Status: {current_status}\n"
@@ -622,6 +630,81 @@ class Agent:
             logger.exception("Document retrieval failed")
 
             return "Document retrieval failed."
+
+
+    # ==================================================
+    # DOCUMENT INVENTORY QUERY DETECTION
+    # ==================================================
+
+    def _should_list_documents(self, user_message):
+        """
+        Identify requests that require a complete document
+        inventory rather than semantic content retrieval.
+        """
+
+        if not isinstance(user_message, str) or not user_message.strip():
+            return False
+
+        text = user_message.lower().strip()
+
+        inventory_terms = [
+            "list all documents",
+            "list my documents",
+            "list all files",
+            "list my files",
+            "show all documents",
+            "show my documents",
+            "show all files",
+            "show my files",
+            "documents uploaded by me",
+            "files uploaded by me",
+            "document inventory",
+            "document list",
+            "list all versions",
+            "show all versions",
+            "scheduled documents",
+            "document version history"
+        ]
+
+        return any(
+            term in text
+            for term in inventory_terms
+        )
+
+
+    # ==================================================
+    # DOCUMENT INVENTORY RETRIEVAL
+    # ==================================================
+
+    def list_user_documents(self, user_id):
+        """
+        Retrieve the complete private document inventory
+        for the authenticated user.
+        """
+
+        try:
+
+            documents = self.docs.list_documents(
+                user_id=user_id
+            )
+
+            if not documents:
+                return "No private documents have been uploaded."
+
+            return json.dumps(
+                documents,
+                indent=2,
+                default=str
+            )
+
+        except Exception:
+
+            logger.exception(
+                "Document inventory retrieval failed for user %s",
+                user_id
+            )
+
+            return "Document inventory retrieval failed."
 
     # ==================================================
     # DOCUMENT QUERY DETECTION
@@ -1020,10 +1103,72 @@ Known facts:
         request_tool_schemas = TOOL_SCHEMAS
 
         # ------------------------------------------
-        # AUTOMATIC DOCUMENT RETRIEVAL
+        # DOCUMENT INVENTORY OR CONTENT RETRIEVAL
         # ------------------------------------------
 
-        if self._should_retrieve_documents(user_message):
+        # Inventory requests must take priority over semantic search.
+        if self._should_list_documents(user_message):
+
+            logger.info(
+                "Automatically retrieving document inventory for user %s",
+                user_id
+            )
+
+            document_result = await asyncio.to_thread(
+                self.list_user_documents,
+                user_id
+            )
+
+            executed_tools.append({
+                "name": "list_user_documents",
+                "result": document_result
+            })
+
+            llm_messages.append({
+                "role": "system",
+                "content": (
+                    "The following information is the complete private "
+                    "document inventory returned by the document "
+                    "management service.\n\n"
+
+                    "DOCUMENT INVENTORY INSTRUCTIONS:\n"
+                    "1. Treat the returned inventory as the source of "
+                    "truth for document names, versions, statuses, "
+                    "effective dates, authority, and departments.\n"
+                    "2. Include all relevant documents and versions "
+                    "requested by the user.\n"
+                    "3. Include scheduled versions when requested, "
+                    "even if they are not currently effective.\n"
+                    "4. Do not omit a version merely because it is "
+                    "scheduled or superseded.\n"
+                    "5. Preserve the exact effective dates and version "
+                    "statuses returned by the service.\n"
+                    "6. Do not confuse upload dates with effective dates.\n"
+                    "7. Do not invent missing metadata. Clearly label "
+                    "missing values as Not specified.\n"
+                    "8. If the inventory is empty, state that no private "
+                    "documents were found.\n"
+                    "9. Do not include shared documents in the user's "
+                    "personal upload inventory.\n\n"
+
+                    "DOCUMENT INVENTORY RESULTS:\n\n"
+                    f"{document_result}\n\n"
+
+                    "Answer the user's inventory question using "
+                    "these results. Do not invent or infer metadata "
+                    "that the service did not return."
+                )
+            })
+
+            # The complete inventory has already been retrieved.
+            # No additional tool calls are necessary.
+            request_tool_schemas = []
+
+        # ------------------------------------------
+        # SEMANTIC DOCUMENT CONTENT RETRIEVAL
+        # ------------------------------------------
+
+        elif self._should_retrieve_documents(user_message):
 
             logger.info(
                 "Automatically retrieving documents for user %s",
@@ -1080,13 +1225,6 @@ Known facts:
                 )
             })
 
-            # Prevent duplicate document retrieval.
-            #request_tool_schemas = [
-                #schema
-                #for schema in TOOL_SCHEMAS
-                #if schema["function"]["name"] != "retrieve_documents"
-            #]
-
             # Automatic RAG has already retrieved the required documents.
             # Do not allow unrelated tool calls to interrupt answer generation.
             request_tool_schemas = []
@@ -1099,7 +1237,7 @@ Known facts:
             "executed_tools": executed_tools,
             "request_tool_schemas": request_tool_schemas
         }
-
+    
     # ==================================================
     # FINAL RESPONSE MESSAGE BUILDER
     # ==================================================
